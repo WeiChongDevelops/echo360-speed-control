@@ -58,4 +58,4 @@ This extension is not affiliated with Echo360. Obviously.
 
 ## 📧 Support
 
-If you encounter any issues or have suggestions, please [open an issue](https://github.com/yourusername/echo360-speed-control/issues) on GitHub.
+If you encounter any issues or have suggestions, please [open an issue](https://github.com/WeiChongDevelops/echo360-speed-control/issues) on GitHub.
