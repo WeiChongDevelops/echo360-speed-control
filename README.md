@@ -50,8 +50,6 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-- Built with 💚 for efficient learning
-
 ## ⚠️ Disclaimer
 
 This extension is not affiliated with Echo360. Obviously.
@@ -59,3 +57,5 @@ This extension is not affiliated with Echo360. Obviously.
 ## 📧 Support
 
 If you encounter any issues or have suggestions, please [open an issue](https://github.com/WeiChongDevelops/echo360-speed-control/issues) on GitHub.
+
+Built with 💚 for efficient learning
