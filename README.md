@@ -2,9 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Chrome Web Store](https://img.shields.io/badge/Chrome-Extension-green)](https://chrome.google.com/webstore)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/yourusername/echo360-speed-control/releases)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/WeiChongDevelops/echo360-speed-control/releases)
 
-The majority of Australian universities use Echo360 for lecture recordings, and have aggressive prevention systems for speed control blockers, so I made a Chrome extension that bypasses it.
+Universities worldwide use Echo360 for lecture recordings with aggressive prevention systems for speed control. This Chrome extension bypasses those restrictions, supporting Echo360 domains globally including .com, .net, .org, .edu, and 45+ country-specific TLDs.
 
 ## Chrome Web Store
 
