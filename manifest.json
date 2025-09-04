@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Echo360 Speed Control - Faster Lectures",
-  "version": "1.2",
+  "version": "1.3.0",
   "description": "Override Echo360 playback speed restrictions for university lectures worldwide",
   "permissions": [
     "activeTab",
     "storage"
   ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
   "host_permissions": [
     "*://*.echo360.com/*",
     "*://*.echo360.net/*",
@@ -111,27 +115,27 @@
         "*://*.echo360.ar/*",
         "*://*.echo360.co/*"
       ],
-      "js": ["content.js"],
+      "js": ["src/content-scripts/content.js"],
       "run_at": "document_start",
       "all_frames": true
     }
   ],
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/popup/popup.html",
     "default_icon": {
-      "16": "icon16.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
     }
   },
   "icons": {
-    "16": "icon16.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
   },
   "web_accessible_resources": [
     {
-      "resources": ["injector.js", "injector-simple.js"],
+      "resources": ["src/injected/injector.js", "src/injected/injector-simple.js", "src/injected/injector-base.js", "src/lib/constants.js", "src/lib/utils.js"],
       "matches": ["<all_urls>"]
     }
   ]

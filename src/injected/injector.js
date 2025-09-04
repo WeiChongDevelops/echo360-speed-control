@@ -1,12 +1,13 @@
-// This script runs in the page context and can override native APIs
 (function() {
   'use strict';
 
 
   let targetSpeed = 1.0;
   let videoElements = new WeakSet();
+  let speedOverlay = null;
+  let overlayTimeout = null;
+  let shortcutsEnabled = true;
 
-  // Override the playbackRate property descriptor
   const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
   
   Object.defineProperty(HTMLMediaElement.prototype, 'playbackRate', {
@@ -14,13 +15,10 @@
       return originalDescriptor.get.call(this);
     },
     set: function(value) {
-      // If this is a video element and we're trying to set a restricted speed
       if (this.tagName === 'VIDEO') {
-        // Allow our custom speeds, ignore Echo360's attempts to reset
         if (videoElements.has(this) && value <= 2 && targetSpeed > 2) {
           return originalDescriptor.set.call(this, targetSpeed);
         }
-        // Track this video element
         if (!videoElements.has(this)) {
           videoElements.add(this);
           setupVideoElement(this);
@@ -31,15 +29,11 @@
     configurable: true
   });
 
-  // Setup individual video element
   function setupVideoElement(video) {
     
-    // Remove existing ratechange listeners by cloning the element
-    // This is aggressive but effective
     const clonedVideo = video.cloneNode(true);
     video.parentNode.replaceChild(clonedVideo, video);
     
-    // Prevent new ratechange listeners from being effective
     const originalAddEventListener = clonedVideo.addEventListener;
     clonedVideo.addEventListener = function(type, listener, options) {
       if (type === 'ratechange') {
@@ -49,14 +43,79 @@
     };
   }
 
-  // Force set playback speed
+  function createOverlayElement() {
+    const overlay = document.createElement('div');
+    overlay.id = 'echo360-speed-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #4CAF50;
+      padding: 10px 20px;
+      border-radius: 25px;
+      font-size: 18px;
+      font-weight: bold;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      z-index: 999999;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    `;
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  function showSpeedOverlay(speed) {
+    if (!speedOverlay) {
+      speedOverlay = createOverlayElement();
+    }
+    
+    speedOverlay.textContent = `${speed.toFixed(2)}x`;
+    speedOverlay.style.opacity = '1';
+    
+    if (overlayTimeout) {
+      clearTimeout(overlayTimeout);
+    }
+    
+    overlayTimeout = setTimeout(() => {
+      if (speedOverlay) {
+        speedOverlay.style.opacity = '0';
+        setTimeout(() => {
+          if (speedOverlay && speedOverlay.style.opacity === '0') {
+            speedOverlay.remove();
+            speedOverlay = null;
+          }
+        }, 300);
+      }
+    }, 2000);
+  }
+
+  function updateSpeedButton(speed) {
+    // Update any native speed button display
+    const speedButtons = document.querySelectorAll('.playback-rate-button, .speed-button, [aria-label*="speed"], [aria-label*="Speed"]');
+    speedButtons.forEach(button => {
+      if (button.textContent.includes('x')) {
+        button.textContent = `${speed.toFixed(2)}x`;
+        button.style.color = '#4CAF50';
+      }
+    });
+  }
+
   function forceSetSpeed(speed) {
     targetSpeed = speed;
-    // Try multiple selectors for Echo360's video elements
+    
+    showSpeedOverlay(speed);
+    updateSpeedButton(speed);
+    
+    // Notify content script about speed change
+    window.postMessage({ 
+      type: 'SPEED_CHANGED', 
+      speed: speed 
+    }, '*');
     const videos = document.querySelectorAll('video, video.leader, video.sc-bUyWVT, video[data-test="leader"], video[role="region"]');
     
     if (videos.length === 0) {
-      // Retry after a delay as video might not be loaded yet
       setTimeout(() => forceSetSpeed(speed), 1000);
       return;
     }
@@ -64,23 +123,18 @@
     videos.forEach(video => {
       videoElements.add(video);
       
-      // Remove any existing speed constraints
       if (video.playbackRate !== speed) {
-        // Try multiple approaches to set the speed
         try {
-          // Method 1: Direct property access
           video.playbackRate = speed;
         } catch (e) {
         }
         
         try {
-          // Method 2: Using original descriptor
           originalDescriptor.set.call(video, speed);
         } catch (e) {
         }
         
         try {
-          // Method 3: Using Object.defineProperty directly on the instance
           Object.defineProperty(video, 'playbackRate', {
             value: speed,
             writable: true,
@@ -90,7 +144,6 @@
         }
       }
       
-      // Double-check it stuck
       setTimeout(() => {
         if (video.playbackRate !== speed) {
           originalDescriptor.set.call(video, speed);
@@ -99,7 +152,6 @@
     });
   }
 
-  // Listen for messages from content script
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     
@@ -111,19 +163,17 @@
         type: 'CURRENT_SPEED', 
         speed: video ? video.playbackRate : 1.0 
       }, '*');
+    } else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {
+      shortcutsEnabled = event.data.enabled;
     }
   });
 
-  // Periodically enforce our speed (nuclear option)
   setInterval(() => {
     const videos = document.querySelectorAll('video, video.leader, video.sc-bUyWVT, video[data-test="leader"], video[role="region"]');
-    videos.forEach(video => {
-      // Always try to enforce our target speed if it's different
-      if (targetSpeed !== 1.0 && video.playbackRate !== targetSpeed) {
+    videos.forEach(video => {      if (targetSpeed !== 1.0 && video.playbackRate !== targetSpeed) {
         try {
           originalDescriptor.set.call(video, targetSpeed);
         } catch (e) {
-          // Fallback to direct assignment
           video.playbackRate = targetSpeed;
         }
         videoElements.add(video);
@@ -131,23 +181,19 @@
     });
   }, 500);
 
-  // Also override common speed limiting functions if they exist
   if (window.Math) {
     const originalMin = Math.min;
     Math.min = function(...args) {
-      // If this looks like a playback rate limit (has 2 or 2.0)
       if (args.length === 2 && (args[1] === 2 || args[1] === 2.0)) {
         const stack = new Error().stack;
         if (stack && stack.includes('playback')) {
-          return args[0]; // Return the requested speed, not the limited one
-        }
+          return args[0];        }
       }
       return originalMin.apply(this, args);
     };
 
     const originalMax = Math.max;
     Math.max = function(...args) {
-      // If this looks like a minimum speed limit
       if (args.length === 2 && (args[1] === 0.25 || args[1] === 0.5)) {
         const stack = new Error().stack;
         if (stack && stack.includes('playback')) {
@@ -158,19 +204,68 @@
     };
   }
 
-  // Add a global function for manual testing in console
+  function handleKeyboardShortcuts(event) {
+    if (!shortcutsEnabled) return;
+    
+    // Shift+< to decrease speed
+    if (event.shiftKey && (event.key === '<' || event.key === ',')) {
+      event.preventDefault();
+      const video = document.querySelector('video');
+      if (video) {
+        const currentSpeed = video.playbackRate;
+        const newSpeed = Math.max(0.25, currentSpeed - 0.25);
+        forceSetSpeed(newSpeed);
+      }
+    // Shift+> to increase speed  
+    } else if (event.shiftKey && (event.key === '>' || event.key === '.')) {
+      event.preventDefault();
+      const video = document.querySelector('video');
+      if (video) {
+        const currentSpeed = video.playbackRate;
+        const newSpeed = Math.min(5, currentSpeed + 0.25);
+        forceSetSpeed(newSpeed);
+      }
+    }
+  }
+
+  document.addEventListener('keydown', handleKeyboardShortcuts);
+
+  // Monitor for speed changes from native player controls
+  function monitorSpeedChanges() {
+    let lastSpeed = 1.0;
+    setInterval(() => {
+      const video = document.querySelector('video');
+      if (video) {
+        const currentSpeed = video.playbackRate;
+        if (Math.abs(currentSpeed - lastSpeed) > 0.01) {
+          lastSpeed = currentSpeed;
+          targetSpeed = currentSpeed;
+          
+          // Update button display
+          updateSpeedButton(currentSpeed);
+          
+          // Broadcast speed change to extension
+          window.postMessage({ 
+            type: 'SPEED_CHANGED', 
+            speed: currentSpeed 
+          }, '*');
+        }
+      }
+    }, 500);
+  }
+  
+  monitorSpeedChanges();
+
   window.setEchoSpeed = function(speed) {
     forceSetSpeed(speed);
     return 'Speed set to ' + speed;
   };
 
-  // Wait for video element and auto-detect Echo360
   function waitForVideo() {
     const checkForVideo = setInterval(() => {
       const videos = document.querySelectorAll('video');
       if (videos.length > 0) {
         videos.forEach(video => {
-          // Check if this is an Echo360 video
           const wrapper = video.closest('[data-test-component="VideoWrapper"]');
           if (wrapper || video.src.includes('echo360') || window.location.hostname.includes('echo360')) {
             videoElements.add(video);

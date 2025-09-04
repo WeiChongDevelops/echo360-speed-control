@@ -8,7 +8,15 @@ Universities worldwide use Echo360 for lecture recordings with aggressive preven
 
 ## Chrome Web Store
 
-Coming soon!
+<div align="center">
+  <a href="https://chromewebstore.google.com/detail/echo360-speed-control-fas/bpkbhihkkflhjdgnjbibkmglkcmnagda?authuser=0&hl=en">
+    <img src="./assets/images/echo-360-speed-control-marquee.png" alt="Echo360 Speed Control - Available on Chrome Web Store" width="100%" style="max-width: 800px;">
+  </a>
+  <br>
+  <a href="https://chromewebstore.google.com/detail/echo360-speed-control-fas/bpkbhihkkflhjdgnjbibkmglkcmnagda?authuser=0&hl=en">
+    <strong>🎯 Install from Chrome Web Store</strong>
+  </a>
+</div>
 
 ## 🎮 Usage
 
@@ -24,25 +32,9 @@ Coming soon!
 2. Use the slider or preset buttons to select your desired speed
 3. The player updates immediately
 
-## 🛠️ Technical Details
-
-The extension works by:
-
-1. Injecting a script that overrides the native `playbackRate` property
-2. Intercepting and blocking Echo360's speed reset attempts
-3. Modifying the player UI to include additional speed options
-4. Using message passing to avoid Content Security Policy restrictions
-
-### File Structure
-
-- **manifest.json** - Extension configuration
-- **content.js** - Runs in isolated context, handles messaging
-- **injector-simple.js** - Runs in page context, overrides native APIs
-- **popup.html/js** - User interface for speed control
-
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+Contributions are welcome; feel free to submit a PR. For major changes, please open an issue first to discuss what you would like to change.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)

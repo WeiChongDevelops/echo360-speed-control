@@ -1,55 +1,115 @@
-// Simple, direct override for Echo360 speed control
 (function() {
   'use strict';
 
   
   let targetSpeed = 1.0;
   let enforceSpeed = false;
+  let speedOverlay = null;
+  let overlayTimeout = null;
+  let shortcutsEnabled = true;
 
-  // Override the playbackRate property at the prototype level
   const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
   
   Object.defineProperty(HTMLMediaElement.prototype, 'playbackRate', {
     get: function() {
       const actualSpeed = originalDescriptor.get.call(this);
-      // If we're enforcing and this is a video, return our target
       if (enforceSpeed && this.tagName === 'VIDEO') {
         return targetSpeed;
       }
       return actualSpeed;
     },
     set: function(value) {
-      // If we're enforcing a custom speed and something tries to reset it
       if (enforceSpeed && this.tagName === 'VIDEO' && targetSpeed > 2) {
-        // Only allow the change if it's to our target speed or higher than 2
         if (value === targetSpeed || value > 2) {
           originalDescriptor.set.call(this, value);
           if (value > 2) {
             targetSpeed = value;
           }
         } else {
-          // Silently maintain our speed
           originalDescriptor.set.call(this, targetSpeed);
         }
       } else {
-        // Normal operation
         originalDescriptor.set.call(this, value);
       }
     },
     configurable: true
   });
 
-  // Simple speed setter
+  function createOverlayElement() {
+    const overlay = document.createElement('div');
+    overlay.id = 'echo360-speed-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #4CAF50;
+      padding: 10px 20px;
+      border-radius: 25px;
+      font-size: 18px;
+      font-weight: bold;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      z-index: 999999;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    `;
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+
+  function showSpeedOverlay(speed) {
+    if (!speedOverlay) {
+      speedOverlay = createOverlayElement();
+    }
+    
+    speedOverlay.textContent = `${speed.toFixed(2)}x`;
+    speedOverlay.style.opacity = '1';
+    
+    if (overlayTimeout) {
+      clearTimeout(overlayTimeout);
+    }
+    
+    overlayTimeout = setTimeout(() => {
+      if (speedOverlay) {
+        speedOverlay.style.opacity = '0';
+        setTimeout(() => {
+          if (speedOverlay && speedOverlay.style.opacity === '0') {
+            speedOverlay.remove();
+            speedOverlay = null;
+          }
+        }, 300);
+      }
+    }, 2000);
+  }
+
+  function updateSpeedButton(speed) {
+    // Update the native Echo360 speed button display
+    const speedButton = document.querySelector('.sc-bRyDhe.bwEIwI');
+    if (speedButton) {
+      speedButton.style.color = '#4CAF50';
+      speedButton.textContent = `${speed.toFixed(2)}x`;
+      speedButton.style.position = '';
+    }
+  }
+
   window.setSpeed = function(speed) {
     targetSpeed = speed;
     enforceSpeed = true;
     
-    // Apply to all current videos
+    showSpeedOverlay(speed);
+    updateSpeedButton(speed);
+    
     document.querySelectorAll('video').forEach(video => {
       originalDescriptor.set.call(video, speed);
     });
     
-    // Keep it enforced for a while
+    // Notify content script about speed change
+    window.postMessage({ 
+      type: 'SPEED_CHANGED', 
+      speed: speed 
+    }, '*');
+    
     let count = 0;
     const enforcer = setInterval(() => {
       document.querySelectorAll('video').forEach(video => {
@@ -65,38 +125,31 @@
     return `Speed set to ${speed}x`;
   };
 
-  // Stop enforcement
   window.resetSpeed = function() {
     enforceSpeed = false;
     targetSpeed = 1.0;
     return 'Speed control released';
   };
 
-  // Function to replace all speed options with custom ones
   function addCustomSpeedOptions() {
     const menu = document.querySelector('#playback-speed-menu ul[role="menu"]');
     if (!menu) {
       return;
     }
     
-    // Check if we already replaced options
     if (menu.querySelector('[data-custom-speed]')) {
       return;
     }
     
     
-    // Clear the entire menu
     menu.innerHTML = '';
     
-    // Get current video speed to mark as selected
     const video = document.querySelector('video');
     const currentSpeed = video ? video.playbackRate : 1;
     
-    // All speeds we want (from fastest to slowest)
     const allSpeeds = [3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1, 0.75, 0.5, 0.25];
     
     allSpeeds.forEach(speed => {
-      // Create new option
       const newOption = document.createElement('li');
       newOption.setAttribute('role', 'menuitemradio');
       newOption.setAttribute('tabindex', '-1');
@@ -105,7 +158,6 @@
       newOption.setAttribute('data-custom-speed', speed);
       newOption.setAttribute('aria-checked', Math.abs(speed - currentSpeed) < 0.01 ? 'true' : 'false');
       
-      // Add checkmark SVG
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('role', 'img');
       svg.setAttribute('class', `sc-bZQynM lnqVmQ sc-hHRaiR ${Math.abs(speed - currentSpeed) < 0.01 ? 'ilbfGM' : 'kzXfpL'}`);
@@ -125,19 +177,21 @@
       
       newOption.appendChild(svg);
       
-      // Add speed text with lightning for speeds > 2
       const speedText = speed > 2 ? `${speed}x ⚡` : `${speed}x`;
       const textNode = document.createTextNode(speedText);
       newOption.appendChild(textNode);
       
-      // Add click handler
       newOption.addEventListener('click', function(e) {
         e.stopPropagation();
         
-        // Set the speed
         window.setSpeed(speed);
         
-        // Update UI - uncheck all options
+        // Also broadcast the speed change
+        window.postMessage({ 
+          type: 'SPEED_CHANGED', 
+          speed: speed 
+        }, '*');
+        
         menu.querySelectorAll('li').forEach(li => {
           li.setAttribute('aria-checked', 'false');
           const svg = li.querySelector('svg');
@@ -147,7 +201,6 @@
           }
         });
         
-        // Check this option
         this.setAttribute('aria-checked', 'true');
         const svg = this.querySelector('svg');
         if (svg) {
@@ -155,7 +208,6 @@
           svg.classList.add('ilbfGM');
         }
         
-        // Update the button text with green color
         const speedButton = document.querySelector('.sc-bRyDhe.bwEIwI');
         if (speedButton) {
           speedButton.style.color = '#4CAF50';
@@ -168,32 +220,26 @@
           }
         }
         
-        // Close the menu
         setTimeout(() => {
           const menu = document.querySelector('#playback-speed-menu');
           if (menu) {
             menu.style.display = 'none';
-            // Trigger any close handlers
             menu.dispatchEvent(new Event('mouseleave'));
           }
         }, 100);
       });
       
-      // Append to menu
       menu.appendChild(newOption);
     });
     
   }
   
-  // Watch for the menu to appear
   const menuObserver = new MutationObserver((mutations) => {
-    // Check if playback speed menu exists
     if (document.querySelector('#playback-speed-menu')) {
       addCustomSpeedOptions();
     }
   });
   
-  // Wait for document.body to exist before observing
   function startObserving() {
     if (document.body) {
       menuObserver.observe(document.body, {
@@ -203,27 +249,75 @@
         attributeFilter: ['style', 'class']
       });
     } else {
-      // Try again in 100ms if body doesn't exist yet
       setTimeout(startObserving, 100);
     }
   }
   
   startObserving();
   
-  // Also check periodically in case menu is already there
   setInterval(() => {
     if (document.querySelector('#playback-speed-menu')) {
       addCustomSpeedOptions();
     }
     
-    // Make speed button green
     const speedButton = document.querySelector('.sc-bRyDhe.bwEIwI');
     if (speedButton && !speedButton.style.color) {
       speedButton.style.color = '#4CAF50';
     }
   }, 1000);
 
-  // Listen for messages from content script
+  function handleKeyboardShortcuts(event) {
+    if (!shortcutsEnabled) return;
+    
+    // Shift+< to decrease speed
+    if (event.shiftKey && (event.key === '<' || event.key === ',')) {
+      event.preventDefault();
+      const video = document.querySelector('video');
+      if (video) {
+        const currentSpeed = video.playbackRate;
+        const newSpeed = Math.max(0.25, currentSpeed - 0.25);
+        window.setSpeed(newSpeed);
+      }
+    // Shift+> to increase speed
+    } else if (event.shiftKey && (event.key === '>' || event.key === '.')) {
+      event.preventDefault();
+      const video = document.querySelector('video');
+      if (video) {
+        const currentSpeed = video.playbackRate;
+        const newSpeed = Math.min(5, currentSpeed + 0.25);
+        window.setSpeed(newSpeed);
+      }
+    }
+  }
+
+  document.addEventListener('keydown', handleKeyboardShortcuts);
+
+  // Monitor for speed changes from native player controls
+  function monitorSpeedChanges() {
+    let lastSpeed = 1.0;
+    setInterval(() => {
+      const video = document.querySelector('video');
+      if (video) {
+        const currentSpeed = video.playbackRate;
+        if (Math.abs(currentSpeed - lastSpeed) > 0.01) {
+          lastSpeed = currentSpeed;
+          targetSpeed = currentSpeed;
+          
+          // Update button display
+          updateSpeedButton(currentSpeed);
+          
+          // Broadcast speed change to extension
+          window.postMessage({ 
+            type: 'SPEED_CHANGED', 
+            speed: currentSpeed 
+          }, '*');
+        }
+      }
+    }, 500);
+  }
+  
+  monitorSpeedChanges();
+
   window.addEventListener('message', (event) => {
     if (event.source !== window) return;
     
@@ -236,6 +330,8 @@
         type: 'CURRENT_ECHO_SPEED', 
         speed: currentSpeed 
       }, '*');
+    } else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {
+      shortcutsEnabled = event.data.enabled;
     }
   });
 
