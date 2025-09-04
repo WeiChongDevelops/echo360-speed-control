@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Echo360 Speed Control - Faster Lectures",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Override Echo360 playback speed restrictions for university lectures worldwide",
   "permissions": [
     "activeTab",
