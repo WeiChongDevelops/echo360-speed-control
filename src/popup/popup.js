@@ -239,7 +239,7 @@
     
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const newValue = Math.min(3, parseFloat(speedSlider.value) + 0.25);
+      const newValue = Math.min(4, parseFloat(speedSlider.value) + 0.25);
       speedSlider.value = newValue;
       updateSliderDisplay();
       setSpeed(newValue);

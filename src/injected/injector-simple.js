@@ -147,7 +147,7 @@
     const video = document.querySelector('video');
     const currentSpeed = video ? video.playbackRate : 1;
     
-    const allSpeeds = [3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1, 0.75, 0.5, 0.25];
+    const allSpeeds = [4, 3.75, 3.5, 3.25, 3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1, 0.75, 0.5, 0.25];
     
     allSpeeds.forEach(speed => {
       const newOption = document.createElement('li');
@@ -284,7 +284,7 @@
       const video = document.querySelector('video');
       if (video) {
         const currentSpeed = video.playbackRate;
-        const newSpeed = Math.min(5, currentSpeed + 0.25);
+        const newSpeed = Math.min(4, currentSpeed + 0.25);
         window.setSpeed(newSpeed);
       }
     }

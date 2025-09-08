@@ -34,7 +34,7 @@ class PopupController {
     // These would normally be imported from constants.js
     this.config = {
       SPEED_MIN: 0.25,
-      SPEED_MAX: 3.0,
+      SPEED_MAX: 4.0,
       SPEED_STEP: 0.25,
       SPEED_DEFAULT: 1.0,
       STATUS_TIMEOUT: 2000,

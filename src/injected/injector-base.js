@@ -12,7 +12,7 @@ class SpeedController {
     // Configuration
     this.config = {
       MIN_SPEED: 0.25,
-      MAX_SPEED: 5.0,
+      MAX_SPEED: 4.0,
       SPEED_STEP: 0.25,
       OVERLAY_TIMEOUT: 2000,
       OVERLAY_FADE_TIME: 300
