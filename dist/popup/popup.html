@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header-controls">
+    <h2 class="header-title">
+      <img src="/assets/images/icon-24.png" alt="Speed" class="speed-icon">
+      Echo360 Speed Control
+    </h2>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle dark/light theme">
+      <svg class="theme-icon sun" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"/>
+      </svg>
+      <svg class="theme-icon moon" fill="currentColor" viewBox="0 0 20 20">
+        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+      </svg>
+    </button>
+  </div>
+  
+  <div class="current-speed">
+    <span>Current Speed:</span>
+    <span class="speed-value" id="currentSpeed" aria-live="polite" aria-label="Current playback speed">1.0x</span>
+  </div>
+  
+  <div class="slider-container">
+    <div class="slider-label">
+      <span>0.25x</span>
+      <span class="new-speed">New speed: <span id="sliderValue" aria-live="polite">1.0x</span></span>
+      <span>4.0x</span>
+    </div>
+    <label for="speedSlider" class="sr-only">Speed control slider</label>
+    <input type="range" id="speedSlider" min="0.25" max="4" step="0.25" value="1" 
+           aria-label="Speed control slider" aria-valuemin="0.25" aria-valuemax="4" aria-valuenow="1">
+  </div>
+  
+  <div class="preset-buttons" role="group" aria-label="Speed preset buttons">
+    <button class="preset-btn" data-speed="0.25" aria-label="Set speed to 0.25x">0.25x</button>
+    <button class="preset-btn" data-speed="0.5" aria-label="Set speed to 0.5x">0.5x</button>
+    <button class="preset-btn" data-speed="0.75" aria-label="Set speed to 0.75x">0.75x</button>
+    <button class="preset-btn" data-speed="1" aria-label="Set speed to 1x">1x</button>
+    <button class="preset-btn" data-speed="1.25" aria-label="Set speed to 1.25x">1.25x</button>
+    <button class="preset-btn" data-speed="1.5" aria-label="Set speed to 1.5x">1.5x</button>
+    <button class="preset-btn" data-speed="1.75" aria-label="Set speed to 1.75x">1.75x</button>
+    <button class="preset-btn" data-speed="2" aria-label="Set speed to 2x">2x</button>
+    <button class="preset-btn" data-speed="2.25" aria-label="Set speed to 2.25x">2.25x</button>
+    <button class="preset-btn" data-speed="2.5" aria-label="Set speed to 2.5x">2.5x</button>
+    <button class="preset-btn" data-speed="2.75" aria-label="Set speed to 2.75x">2.75x</button>
+    <button class="preset-btn" data-speed="3" aria-label="Set speed to 3x">3x</button>
+  </div>
+  
+  <div class="status" id="status" role="status" aria-live="polite">Ready</div>
+  
+  <div class="keyboard-hint" aria-label="Keyboard shortcuts">
+    Tip: Use Shift+&lt; and Shift+&gt; on the page to adjust speed
+  </div>
+  
+  <div class="shortcuts-toggle-container">
+    <label class="toggle-label" for="shortcutsToggle">
+      <span>Keyboard shortcuts</span>
+      <input type="checkbox" id="shortcutsToggle" class="toggle-switch" checked aria-label="Enable keyboard shortcuts">
+      <span class="toggle-slider"></span>
+    </label>
+  </div>
+  
+  <div class="kofi-container">
+    <a href="https://ko-fi.com/D1D31C0IQC" target="_blank" class="kofi-button" aria-label="Support on Ko-fi">
+      <img src="/assets/images/kofi.png" alt="Ko-fi" class="kofi-icon">
+      <span>Buy me a coffee</span>
+    </a>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

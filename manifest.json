@@ -8,7 +8,7 @@
     "storage"
   ],
   "background": {
-    "service_worker": "src/background/service-worker.js",
+    "service_worker": "background/service-worker.js",
     "type": "module"
   },
   "host_permissions": [
@@ -115,13 +115,13 @@
         "*://*.echo360.ar/*",
         "*://*.echo360.co/*"
       ],
-      "js": ["src/content-scripts/content.js"],
+      "js": ["content-scripts/content.js"],
       "run_at": "document_start",
       "all_frames": true
     }
   ],
   "action": {
-    "default_popup": "src/popup/popup.html",
+    "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "assets/icons/icon16.png",
       "48": "assets/icons/icon48.png",
@@ -135,7 +135,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["src/injected/injector.js", "src/injected/injector-simple.js", "src/injected/injector-base.js", "src/lib/constants.js", "src/lib/utils.js"],
+      "resources": ["injected/injector.js", "injected/injector-simple.js", "lib/constants.js", "lib/utils.js"],
       "matches": ["<all_urls>"]
     }
   ]
