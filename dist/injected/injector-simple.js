@@ -20,10 +20,12 @@
                 if (value === targetSpeed || value > 2) {
                     originalDescriptor.set.call(this, value);
                     if (value > 2) {
+                        console.log(`[Echo360 Speed Control] Property descriptor: accepting speed ${value.toFixed(2)}x (target was ${targetSpeed.toFixed(2)}x)`);
                         targetSpeed = value;
                     }
                 }
                 else {
+                    console.log(`[Echo360 Speed Control] Property descriptor: Echo360 attempted to set ${value.toFixed(2)}x, enforcing ${targetSpeed.toFixed(2)}x instead`);
                     originalDescriptor.set.call(this, targetSpeed);
                 }
             }
@@ -34,6 +36,10 @@
         configurable: true
     });
     function createOverlayElement() {
+        if (!document.body) {
+            console.warn('[Echo360 Speed Control] document.body not ready, cannot create overlay yet');
+            return null;
+        }
         const overlay = document.createElement('div');
         overlay.id = 'echo360-speed-overlay';
         overlay.style.cssText = `
@@ -55,9 +61,19 @@
         document.body.appendChild(overlay);
         return overlay;
     }
-    function showSpeedOverlay(speed) {
+    function showSpeedOverlay(speed, retryCount = 0) {
         if (!speedOverlay) {
             speedOverlay = createOverlayElement();
+            if (!speedOverlay) {
+                // Body not ready, retry with exponential backoff (max 5 retries)
+                if (retryCount < 5) {
+                    const delay = 100 * Math.pow(2, retryCount);
+                    setTimeout(() => showSpeedOverlay(speed, retryCount + 1), delay);
+                    return;
+                }
+                console.error('[Echo360 Speed Control] Could not create overlay after retries, document.body still not available');
+                return;
+            }
         }
         speedOverlay.textContent = `${speed.toFixed(2)}x`;
         speedOverlay.style.opacity = '1';
@@ -76,20 +92,39 @@
             }
         }, 2000);
     }
-    function updateSpeedButton(speed) {
-        const speedButton = document.querySelector('.sc-bRyDhe.bwEIwI');
-        if (speedButton) {
-            speedButton.style.color = '#4CAF50';
-            speedButton.textContent = `${speed.toFixed(2)}x`;
-            speedButton.style.position = '';
+    function updateSpeedButton(speed, retryCount = 0) {
+        // Use stable data-testid selector instead of minified classes
+        const speedButton = document.querySelector('[data-testid="playback-speed-button"]');
+        if (!speedButton) {
+            // Retry with exponential backoff (max 5 retries: 100ms, 200ms, 400ms, 800ms, 1600ms)
+            if (retryCount < 5) {
+                const delay = 100 * Math.pow(2, retryCount);
+                setTimeout(() => updateSpeedButton(speed, retryCount + 1), delay);
+                return;
+            }
+            console.warn('[Echo360 Speed Control] Speed button not found after retries. Echo360 may have changed their button structure.');
+            return;
+        }
+        // Find the speed display span (second span child)
+        const spans = speedButton.querySelectorAll('span');
+        const speedSpan = spans[1]; // Second span contains the speed value
+        if (speedSpan) {
+            speedSpan.style.color = '#4CAF50';
+            const speedText = speed > 2 ? `${speed.toFixed(2)}x ⚡` : `${speed.toFixed(2)}x`;
+            speedSpan.textContent = speedText;
         }
     }
     window.setSpeed = function (speed) {
+        console.log(`[Echo360 Speed Control] setSpeed called: ${speed.toFixed(2)}x (previous target: ${targetSpeed.toFixed(2)}x)`);
         targetSpeed = speed;
         enforceSpeed = true;
         showSpeedOverlay(speed);
         updateSpeedButton(speed);
-        document.querySelectorAll('video').forEach(video => {
+        const videos = document.querySelectorAll('video');
+        console.log(`[Echo360 Speed Control] Found ${videos.length} video element(s) to update`);
+        videos.forEach((video, index) => {
+            const currentSpeed = originalDescriptor.get.call(video);
+            console.log(`[Echo360 Speed Control] Video ${index}: current speed ${currentSpeed.toFixed(2)}x → setting to ${speed.toFixed(2)}x`);
             originalDescriptor.set.call(video, speed);
         });
         // Notify content script about speed change
@@ -102,6 +137,7 @@
             document.querySelectorAll('video').forEach(video => {
                 const current = originalDescriptor.get.call(video);
                 if (current !== speed) {
+                    console.log(`[Echo360 Speed Control] Speed drift detected: ${current.toFixed(2)}x → re-enforcing ${speed.toFixed(2)}x`);
                     originalDescriptor.set.call(video, speed);
                 }
             });
@@ -109,6 +145,7 @@
             if (count > 20)
                 clearInterval(enforcer);
         }, 250);
+        console.log(`[Echo360 Speed Control] Speed successfully set to ${speed.toFixed(2)}x`);
         return `Speed set to ${speed}x`;
     };
     window.resetSpeed = function () {
@@ -116,77 +153,82 @@
         targetSpeed = 1.0;
         return 'Speed control released';
     };
-    function addCustomSpeedOptions() {
+    function addCustomSpeedOptions(retryCount = 0) {
         const menu = document.querySelector('#playback-speed-menu ul[role="menu"]');
         if (!menu) {
+            // Menu element not found - this is normal if called before menu is opened
             return;
         }
         if (menu.querySelector('[data-custom-speed]')) {
+            // Custom options already added
             return;
         }
-        menu.innerHTML = '';
+        // Clone an existing menu item to inherit all Echo360 styles
+        const templateItem = menu.querySelector('li[role="menuitemradio"]');
+        if (!templateItem) {
+            // Retry with exponential backoff (max 3 retries: 50ms, 100ms, 200ms)
+            if (retryCount < 3) {
+                const delay = 50 * Math.pow(2, retryCount);
+                setTimeout(() => addCustomSpeedOptions(retryCount + 1), delay);
+                return;
+            }
+            console.error('[Echo360 Speed Control] No template menu item found to clone after retries. Echo360 may have changed their menu structure.');
+            return;
+        }
         const video = document.querySelector('video');
         const currentSpeed = video ? video.playbackRate : 1;
+        console.log(`[Echo360 Speed Control] Cloning menu items from template. Current speed: ${currentSpeed.toFixed(2)}x`);
+        // Clear existing menu
+        menu.innerHTML = '';
         const allSpeeds = [4, 3.75, 3.5, 3.25, 3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1, 0.75, 0.5, 0.25];
         allSpeeds.forEach(speed => {
-            const newOption = document.createElement('li');
-            newOption.setAttribute('role', 'menuitemradio');
-            newOption.setAttribute('tabindex', '-1');
-            newOption.setAttribute('data-test-component', 'SettingsRadioOption');
-            newOption.setAttribute('class', 'sc-hQrNYi ilDWTJ');
+            // Clone the template item to inherit all styles automatically
+            const newOption = templateItem.cloneNode(true);
+            // Mark as custom speed
             newOption.setAttribute('data-custom-speed', speed.toString());
-            newOption.setAttribute('aria-checked', Math.abs(speed - currentSpeed) < 0.01 ? 'true' : 'false');
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('role', 'img');
-            svg.setAttribute('class', `sc-bZQynM lnqVmQ sc-hHRaiR ${Math.abs(speed - currentSpeed) < 0.01 ? 'ilbfGM' : 'kzXfpL'}`);
-            svg.setAttribute('data-test-component', 'Icon');
-            svg.setAttribute('data-test-name', 'check');
-            svg.setAttribute('aria-label', 'check');
-            svg.setAttribute('viewBox', '0 0 448 512');
-            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-            title.textContent = 'check';
-            svg.appendChild(title);
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('class', 'can-be-filled');
-            path.setAttribute('d', 'M440.1 103C450.3 112.4 450.3 127.6 440.1 136.1L176.1 400.1C167.6 410.3 152.4 410.3 143 400.1L7.029 264.1C-2.343 255.6-2.343 240.4 7.029 231C16.4 221.7 31.6 221.7 40.97 231L160 350.1L407 103C416.4 93.66 431.6 93.66 440.1 103V103z');
-            svg.appendChild(path);
-            newOption.appendChild(svg);
+            // Set checked state
+            const isChecked = Math.abs(speed - currentSpeed) < 0.01;
+            newOption.setAttribute('aria-checked', isChecked ? 'true' : 'false');
+            // Update SVG checkmark visibility using inline styles (class-agnostic)
+            const svg = newOption.querySelector('svg');
+            if (svg) {
+                svg.style.visibility = isChecked ? 'visible' : 'hidden';
+            }
+            // Update text content
             const speedText = speed > 2 ? `${speed}x ⚡` : `${speed}x`;
-            const textNode = document.createTextNode(speedText);
-            newOption.appendChild(textNode);
+            // Find and replace the text node (last child is typically the text)
+            const textNode = Array.from(newOption.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
+            if (textNode) {
+                textNode.textContent = speedText;
+            }
+            else {
+                // Fallback: append new text node
+                newOption.appendChild(document.createTextNode(speedText));
+            }
             newOption.addEventListener('click', function (e) {
                 e.stopPropagation();
+                console.log(`[Echo360 Speed Control] Menu item clicked: ${speed.toFixed(2)}x`);
                 window.setSpeed(speed);
                 window.postMessage({
                     type: 'SPEED_CHANGED',
                     speed: speed
                 }, '*');
+                // Update all menu items' checked state
                 menu.querySelectorAll('li').forEach(li => {
                     li.setAttribute('aria-checked', 'false');
                     const svg = li.querySelector('svg');
                     if (svg) {
-                        svg.classList.remove('ilbfGM');
-                        svg.classList.add('kzXfpL');
+                        svg.style.visibility = 'hidden';
                     }
                 });
+                // Mark this item as checked
                 this.setAttribute('aria-checked', 'true');
                 const svg = this.querySelector('svg');
                 if (svg) {
-                    svg.classList.remove('kzXfpL');
-                    svg.classList.add('ilbfGM');
+                    svg.style.visibility = 'visible';
                 }
-                const speedButton = document.querySelector('.sc-bRyDhe.bwEIwI');
-                if (speedButton) {
-                    speedButton.style.color = '#4CAF50';
-                    if (speed > 2) {
-                        speedButton.innerHTML = `${speed}x <span style="position: absolute; bottom: 2px; right: 2px; font-size: 0.7em;">⚡</span>`;
-                        speedButton.style.position = 'relative';
-                    }
-                    else {
-                        speedButton.textContent = `${speed}x`;
-                        speedButton.style.position = '';
-                    }
-                }
+                // Update speed button display
+                updateSpeedButton(speed);
                 setTimeout(() => {
                     const menu = document.querySelector('#playback-speed-menu');
                     if (menu) {
@@ -221,9 +263,14 @@
         if (document.querySelector('#playback-speed-menu')) {
             addCustomSpeedOptions();
         }
-        const speedButton = document.querySelector('.sc-bRyDhe.bwEIwI');
-        if (speedButton && !speedButton.style.color) {
-            speedButton.style.color = '#4CAF50';
+        // Ensure speed button span stays green (fallback)
+        const speedButton = document.querySelector('[data-testid="playback-speed-button"]');
+        if (speedButton) {
+            const spans = speedButton.querySelectorAll('span');
+            const speedSpan = spans[1];
+            if (speedSpan && !speedSpan.style.color) {
+                speedSpan.style.color = '#4CAF50';
+            }
         }
     }, 1000);
     function handleKeyboardShortcuts(event) {
@@ -235,6 +282,7 @@
             if (video) {
                 const currentSpeed = video.playbackRate;
                 const newSpeed = Math.max(0.25, currentSpeed - 0.25);
+                console.log(`[Echo360 Speed Control] Keyboard shortcut (decrease): ${currentSpeed.toFixed(2)}x → ${newSpeed.toFixed(2)}x`);
                 window.setSpeed(newSpeed);
             }
         }
@@ -244,6 +292,7 @@
             if (video) {
                 const currentSpeed = video.playbackRate;
                 const newSpeed = Math.min(4, currentSpeed + 0.25);
+                console.log(`[Echo360 Speed Control] Keyboard shortcut (increase): ${currentSpeed.toFixed(2)}x → ${newSpeed.toFixed(2)}x`);
                 window.setSpeed(newSpeed);
             }
         }
@@ -256,6 +305,7 @@
             if (video) {
                 const currentSpeed = video.playbackRate;
                 if (Math.abs(currentSpeed - lastSpeed) > 0.01) {
+                    console.log(`[Echo360 Speed Control] Speed change detected (monitor): ${lastSpeed.toFixed(2)}x → ${currentSpeed.toFixed(2)}x`);
                     lastSpeed = currentSpeed;
                     targetSpeed = currentSpeed;
                     updateSpeedButton(currentSpeed);
@@ -272,18 +322,22 @@
         if (event.source !== window)
             return;
         if (event.data.type === 'SET_ECHO_SPEED') {
+            console.log(`[Echo360 Speed Control] Message received SET_ECHO_SPEED: ${event.data.speed?.toFixed(2)}x`);
             window.setSpeed(event.data.speed);
         }
         else if (event.data.type === 'GET_ECHO_SPEED') {
             const video = document.querySelector('video');
             const currentSpeed = video ? video.playbackRate : 1;
+            console.log(`[Echo360 Speed Control] Message received GET_ECHO_SPEED: responding with ${currentSpeed.toFixed(2)}x`);
             window.postMessage({
                 type: 'CURRENT_ECHO_SPEED',
                 speed: currentSpeed
             }, '*');
         }
         else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {
+            console.log(`[Echo360 Speed Control] Message received SET_SHORTCUTS_ENABLED: ${event.data.enabled}`);
             shortcutsEnabled = event.data.enabled;
         }
     });
+    console.log('[Echo360 Speed Control] Extension injected and initialized (injector-simple.js)');
 })();
