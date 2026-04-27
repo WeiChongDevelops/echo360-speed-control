@@ -9,22 +9,27 @@ Chrome extension that bypasses Echo360's playback speed restrictions, allowing u
 ## Build & Development Commands
 
 ```bash
-# Build the extension (TypeScript compilation + asset copying)
+# Build for both Chrome and Firefox (outputs dist/chrome and dist/firefox)
 npm run build
 
-# Watch mode for development (auto-recompile on changes)
-npm run watch
+# Build only one target
+npm run build:chrome
+npm run build:firefox
 
-# Copy assets to dist (icons, manifest, popup HTML/CSS)
-npm run copy-assets
+# Watch mode for development (auto-recompile TypeScript only)
+npm run watch
 
 # Clean build artifacts
 npm run clean
 ```
 
+The build is driven by `build.mjs`, a cross-platform Node script that compiles TypeScript once into `dist/_compiled` and then assembles per-browser bundles in `dist/chrome` and `dist/firefox`. The browser-specific manifests are generated from the root `manifest.json` template.
+
 **Testing the extension:**
 1. Build with `npm run build`
-2. Load unpacked extension from `dist/` directory in Chrome
+2. Load unpacked extension:
+   - **Chrome**: `chrome://extensions` → "Load unpacked" → select `dist/chrome`
+   - **Firefox**: `about:debugging#/runtime/this-firefox` → "Load Temporary Add-on…" → select `dist/firefox/manifest.json`
 3. Navigate to any Echo360 lecture page
 4. Test speed controls via popup or on-page player menu
 
