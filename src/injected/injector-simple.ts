@@ -5,6 +5,8 @@
     type: string;
     speed?: number;
     enabled?: boolean;
+    linkedinIcon?: string;
+    hideSlowSpeeds?: boolean;
   }
 
   let targetSpeed = 1.0;
@@ -12,6 +14,16 @@
   let speedOverlay: HTMLElement | null = null;
   let overlayTimeout: number | null = null;
   let shortcutsEnabled = true;
+  let linkedinIconUrl: string | null = null;
+  let hideSlowSpeeds = false;
+
+  function applySlowSpeedFilter(): void {
+    const items = document.querySelectorAll<HTMLElement>('#playback-speed-menu li[data-custom-speed]');
+    items.forEach(item => {
+      const speed = parseFloat(item.getAttribute('data-custom-speed') || '0');
+      item.style.display = (hideSlowSpeeds && speed < 1) ? 'none' : '';
+    });
+  }
 
   const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate')!;
 
@@ -124,9 +136,17 @@
     const speedSpan = spans[1]; // Second span contains the speed value
 
     if (speedSpan) {
-      speedSpan.style.color = '#4CAF50';
       const speedText = speed > 2 ? `${speed.toFixed(2)}x ⚡` : `${speed.toFixed(2)}x`;
       speedSpan.textContent = speedText;
+
+      if (speed > 2) {
+        speedSpan.style.color = '#4CAF50';
+        speedSpan.setAttribute('title', 'Speed above Echo360 native cap');
+      } else {
+        // S1: clear our override so Echo360's default styling shows through.
+        speedSpan.style.color = '';
+        speedSpan.removeAttribute('title');
+      }
     }
   }
 
@@ -210,6 +230,66 @@
     // Clear existing menu
     menu.innerHTML = '';
 
+    // Header-subtitle keyboard hint (non-interactive, presentation-only)
+    const hintItem = document.createElement('li');
+    hintItem.setAttribute('role', 'presentation');
+    hintItem.setAttribute('data-custom-hint', 'true');
+    hintItem.setAttribute('aria-hidden', 'true');
+    hintItem.style.cssText = `
+      padding: 6px 16px 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.55);
+      pointer-events: none;
+      cursor: default;
+      border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+      margin-bottom: 4px;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    `;
+    const KEY_CSS = `
+      display: inline-block;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 10px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      border-radius: 3px;
+      line-height: 1.3;
+      vertical-align: middle;
+      color: rgba(255, 255, 255, 0.9);
+    `;
+    const makeKey = (text: string): HTMLSpanElement => {
+      const el = document.createElement('span');
+      el.textContent = text;
+      el.style.cssText = KEY_CSS;
+      return el;
+    };
+    const makeRow = (emoji: string, secondKey: string): HTMLDivElement => {
+      const row = document.createElement('div');
+      row.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-left: 8px;
+      `;
+      row.appendChild(document.createTextNode(emoji));
+      row.appendChild(makeKey('Shift'));
+      row.appendChild(document.createTextNode('+'));
+      row.appendChild(makeKey(secondKey));
+      return row;
+    };
+
+    const hintLabel = document.createElement('div');
+    hintLabel.textContent = 'Shortcuts';
+    hintLabel.style.fontWeight = '600';
+    hintItem.appendChild(hintLabel);
+    hintItem.appendChild(makeRow('🐌', '<'));
+    hintItem.appendChild(makeRow('⚡', '>'));
+
+    menu.appendChild(hintItem);
+
     const allSpeeds = [4, 3.75, 3.5, 3.25, 3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1, 0.75, 0.5, 0.25];
 
     allSpeeds.forEach(speed => {
@@ -238,6 +318,12 @@
       } else {
         // Fallback: append new text node
         newOption.appendChild(document.createTextNode(speedText));
+      }
+
+      // C2: announce >2x speeds explicitly to AT and as tooltip
+      if (speed > 2) {
+        newOption.setAttribute('aria-label', `${speed}x — above Echo360's native cap`);
+        newOption.setAttribute('title', 'Speed above Echo360 native cap');
       }
 
       newOption.addEventListener('click', function(e) {
@@ -281,6 +367,120 @@
 
       menu.appendChild(newOption);
     });
+
+    // Apply the current filter (covers first-render with stored preference)
+    applySlowSpeedFilter();
+
+    // Hide-slow-speeds toggle row
+    const toggleItem = document.createElement('li');
+    toggleItem.setAttribute('role', 'presentation');
+    toggleItem.setAttribute('data-custom-toggle', 'hide-slow-speeds');
+    toggleItem.style.cssText = `
+      padding: 8px 16px;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 11px;
+      border-top: 1px solid rgba(128, 128, 128, 0.25);
+      margin-top: 4px;
+      cursor: pointer;
+      user-select: none;
+    `;
+    const toggleLabel = document.createElement('span');
+    toggleLabel.textContent = 'Hide slow speeds';
+
+    const toggleSwitch = document.createElement('span');
+    toggleSwitch.setAttribute('role', 'switch');
+    toggleSwitch.setAttribute('aria-checked', hideSlowSpeeds ? 'true' : 'false');
+    toggleSwitch.style.cssText = `
+      position: relative;
+      width: 32px;
+      height: 18px;
+      background: ${hideSlowSpeeds ? '#4CAF50' : '#8C0047'};
+      border-radius: 18px;
+      transition: background-color 0.2s;
+      flex-shrink: 0;
+    `;
+    const toggleKnob = document.createElement('span');
+    toggleKnob.style.cssText = `
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.2s;
+      transform: translateX(${hideSlowSpeeds ? '14px' : '0'});
+    `;
+    toggleSwitch.appendChild(toggleKnob);
+
+    toggleItem.appendChild(toggleLabel);
+    toggleItem.appendChild(toggleSwitch);
+
+    toggleItem.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideSlowSpeeds = !hideSlowSpeeds;
+      toggleSwitch.setAttribute('aria-checked', hideSlowSpeeds ? 'true' : 'false');
+      toggleSwitch.style.background = hideSlowSpeeds ? '#4CAF50' : '#8C0047';
+      toggleKnob.style.transform = `translateX(${hideSlowSpeeds ? '14px' : '0'})`;
+      applySlowSpeedFilter();
+      window.postMessage({
+        type: 'HIDE_SLOW_SPEEDS_CHANGED',
+        hideSlowSpeeds
+      } as SpeedMessage, '*');
+    });
+
+    menu.appendChild(toggleItem);
+
+    // Footer CTA: accent-pill report link
+    const ctaItem = document.createElement('li');
+    ctaItem.setAttribute('role', 'presentation');
+    ctaItem.setAttribute('data-custom-cta', 'true');
+    ctaItem.style.cssText = `
+      padding: 10px 16px 12px;
+      list-style: none;
+      display: flex;
+      justify-content: center;
+    `;
+    const ctaLink = document.createElement('a');
+    ctaLink.href = 'https://www.linkedin.com/in/wei-chong/';
+    ctaLink.target = '_blank';
+    ctaLink.rel = 'noopener noreferrer';
+    ctaLink.style.cssText = `
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: rgba(76, 175, 80, 0.12);
+      border: 1px solid #4CAF50;
+      border-radius: 16px;
+      color: #4CAF50;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 600;
+      transition: background-color 0.15s;
+      outline: none;
+    `;
+    ctaLink.addEventListener('mouseenter', () => { ctaLink.style.background = 'rgba(76, 175, 80, 0.22)'; });
+    ctaLink.addEventListener('mouseleave', () => { ctaLink.style.background = 'rgba(76, 175, 80, 0.12)'; });
+    const ctaText = document.createElement('span');
+    ctaText.textContent = 'Request feature / report bug';
+    ctaLink.appendChild(ctaText);
+    if (linkedinIconUrl) {
+      const ctaIcon = document.createElement('img');
+      ctaIcon.src = linkedinIconUrl;
+      ctaIcon.alt = '';
+      ctaIcon.width = 14;
+      ctaIcon.height = 14;
+      ctaIcon.style.display = 'block';
+      ctaLink.appendChild(ctaIcon);
+    }
+    ctaItem.appendChild(ctaLink);
+    menu.appendChild(ctaItem);
   }
 
   const menuObserver = new MutationObserver((mutations) => {
@@ -304,18 +504,27 @@
 
   startObserving();
 
-  setInterval(() => {
+  const menuRefresher = setInterval(() => {
     if (document.querySelector('#playback-speed-menu')) {
       addCustomSpeedOptions();
     }
 
-    // Ensure speed button span stays green (fallback)
+    // Ensure speed button span stays green (fallback) — only at >2x
     const speedButton = document.querySelector('[data-testid="playback-speed-button"]') as HTMLElement;
     if (speedButton) {
       const spans = speedButton.querySelectorAll('span');
       const speedSpan = spans[1];
-      if (speedSpan && !speedSpan.style.color) {
-        speedSpan.style.color = '#4CAF50';
+      if (speedSpan) {
+        if (targetSpeed > 2) {
+          if (!speedSpan.style.color) {
+            speedSpan.style.color = '#4CAF50';
+          }
+        } else {
+          // S1-4: don't let the fallback loop re-green at ≤2x.
+          if (speedSpan.style.color === 'rgb(76, 175, 80)' || speedSpan.style.color === '#4CAF50') {
+            speedSpan.style.color = '';
+          }
+        }
       }
     }
   }, 1000);
@@ -346,9 +555,10 @@
 
   document.addEventListener('keydown', handleKeyboardShortcuts);
 
+  let speedMonitor: ReturnType<typeof setInterval> | null = null;
   function monitorSpeedChanges(): void {
     let lastSpeed = 1.0;
-    setInterval(() => {
+    speedMonitor = setInterval(() => {
       const video = document.querySelector<HTMLVideoElement>('video');
       if (video) {
         const currentSpeed = video.playbackRate;
@@ -370,6 +580,12 @@
 
   monitorSpeedChanges();
 
+  window.addEventListener('beforeunload', () => {
+    clearInterval(menuRefresher);
+    if (speedMonitor) clearInterval(speedMonitor);
+    menuObserver.disconnect();
+  });
+
   window.addEventListener('message', (event: MessageEvent<SpeedMessage>) => {
     if (event.source !== window) return;
 
@@ -387,6 +603,13 @@
     } else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {
       console.log(`[Echo360 Speed Control] Message received SET_SHORTCUTS_ENABLED: ${event.data.enabled}`);
       shortcutsEnabled = event.data.enabled!;
+    } else if (event.data.type === 'SET_ASSET_URLS') {
+      if (typeof event.data.linkedinIcon === 'string') {
+        linkedinIconUrl = event.data.linkedinIcon;
+      }
+    } else if (event.data.type === 'SET_HIDE_SLOW_SPEEDS') {
+      hideSlowSpeeds = event.data.hideSlowSpeeds === true;
+      applySlowSpeedFilter();
     }
   });
 

@@ -28,7 +28,7 @@
   <div class="slider-container">
     <div class="slider-label">
       <span>0.25x</span>
-      <span class="new-speed">New speed: <span id="sliderValue" aria-live="polite">1.0x</span></span>
+      <span class="new-speed">New speed: <span id="sliderValue">1.0x</span></span>
       <span>4.0x</span>
     </div>
     <label for="speedSlider" class="sr-only">Speed control slider</label>
@@ -37,25 +37,51 @@
   </div>
   
   <div class="preset-buttons" role="group" aria-label="Speed preset buttons">
-    <button class="preset-btn" data-speed="0.25" aria-label="Set speed to 0.25x">0.25x</button>
-    <button class="preset-btn" data-speed="0.5" aria-label="Set speed to 0.5x">0.5x</button>
-    <button class="preset-btn" data-speed="0.75" aria-label="Set speed to 0.75x">0.75x</button>
-    <button class="preset-btn" data-speed="1" aria-label="Set speed to 1x">1x</button>
-    <button class="preset-btn" data-speed="1.25" aria-label="Set speed to 1.25x">1.25x</button>
-    <button class="preset-btn" data-speed="1.5" aria-label="Set speed to 1.5x">1.5x</button>
-    <button class="preset-btn" data-speed="1.75" aria-label="Set speed to 1.75x">1.75x</button>
-    <button class="preset-btn" data-speed="2" aria-label="Set speed to 2x">2x</button>
-    <button class="preset-btn" data-speed="2.25" aria-label="Set speed to 2.25x">2.25x</button>
-    <button class="preset-btn" data-speed="2.5" aria-label="Set speed to 2.5x">2.5x</button>
-    <button class="preset-btn" data-speed="2.75" aria-label="Set speed to 2.75x">2.75x</button>
-    <button class="preset-btn" data-speed="3" aria-label="Set speed to 3x">3x</button>
+    <button class="preset-btn" data-speed="0.25" aria-label="Set speed to 0.25x" aria-pressed="false">0.25x</button>
+    <button class="preset-btn" data-speed="0.5" aria-label="Set speed to 0.5x" aria-pressed="false">0.5x</button>
+    <button class="preset-btn" data-speed="0.75" aria-label="Set speed to 0.75x" aria-pressed="false">0.75x</button>
+    <button class="preset-btn" data-speed="1" aria-label="Set speed to 1x" aria-pressed="false">1x</button>
+    <button class="preset-btn" data-speed="1.25" aria-label="Set speed to 1.25x" aria-pressed="false">1.25x</button>
+    <button class="preset-btn" data-speed="1.5" aria-label="Set speed to 1.5x" aria-pressed="false">1.5x</button>
+    <button class="preset-btn" data-speed="1.75" aria-label="Set speed to 1.75x" aria-pressed="false">1.75x</button>
+    <button class="preset-btn" data-speed="2" aria-label="Set speed to 2x" aria-pressed="false">2x</button>
+    <button class="preset-btn" data-speed="2.25" aria-label="Set speed to 2.25x" aria-pressed="false">2.25x</button>
+    <button class="preset-btn" data-speed="2.5" aria-label="Set speed to 2.5x" aria-pressed="false">2.5x</button>
+    <button class="preset-btn" data-speed="2.75" aria-label="Set speed to 2.75x" aria-pressed="false">2.75x</button>
+    <button class="preset-btn" data-speed="3" aria-label="Set speed to 3x" aria-pressed="false">3x</button>
   </div>
-  
-  <div class="status" id="status" role="status" aria-live="polite">Ready</div>
-  
-  <div class="keyboard-hint" aria-label="Keyboard shortcuts">
-    Tip: Use Shift+&lt; and Shift+&gt; on the page to adjust speed
+
+  <div class="status-container">
+    <div class="status" id="status" role="status" aria-live="polite">Detecting Echo360 player…</div>
+    <a class="status-report hidden" id="statusReport"
+       href="https://www.linkedin.com/in/wei-chong/" target="_blank" rel="noopener noreferrer"
+       aria-label="Report at linkedin.com/in/wei-chong">
+      <img src="/assets/icons/linkedin.svg" alt="" width="16" height="16">
+    </a>
+    <button type="button" id="statusRetry" class="status-retry hidden" aria-label="Retry connection">↻ Retry</button>
   </div>
+
+  <details class="shortcuts-disclosure">
+    <summary class="shortcuts-summary">
+      <span class="shortcuts-summary-text">Tip: 🐌 Shift + &lt; or ⚡ Shift + &gt; on the page</span>
+    </summary>
+    <div class="shortcuts-body">
+      <h4>In popup</h4>
+      <ul>
+        <li><kbd>1</kbd>–<kbd>4</kbd> Set speed to 1x–4x</li>
+        <li><kbd>←</kbd> / <kbd>↓</kbd> Decrease 0.25x</li>
+        <li><kbd>→</kbd> / <kbd>↑</kbd> Increase 0.25x</li>
+        <li><kbd>R</kbd> Reset to 1x</li>
+        <li><kbd>T</kbd> Toggle theme</li>
+      </ul>
+      <h4>On the page</h4>
+      <ul>
+        <li>🐌 <kbd>Shift</kbd> + <kbd>&lt;</kbd> Slow down 0.25x</li>
+        <li>⚡ <kbd>Shift</kbd> + <kbd>&gt;</kbd> Speed up 0.25x</li>
+      </ul>
+      <p class="shortcuts-note">On-page shortcuts respect the "Keyboard shortcuts" toggle below.</p>
+    </div>
+  </details>
   
   <div class="shortcuts-toggle-container">
     <label class="toggle-label" for="shortcutsToggle">

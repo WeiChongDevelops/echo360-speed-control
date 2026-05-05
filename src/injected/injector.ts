@@ -175,7 +175,7 @@
     }
   });
 
-  setInterval(() => {
+  const speedEnforcer = setInterval(() => {
     const videos = document.querySelectorAll<HTMLVideoElement>('video, video.leader, video.sc-bUyWVT, video[data-test="leader"], video[role="region"]');
     videos.forEach(video => {
       if (targetSpeed !== 1.0 && video.playbackRate !== targetSpeed) {
@@ -237,9 +237,10 @@
 
   document.addEventListener('keydown', handleKeyboardShortcuts);
 
+  let speedMonitor: ReturnType<typeof setInterval> | null = null;
   function monitorSpeedChanges(): void {
     let lastSpeed = 1.0;
-    setInterval(() => {
+    speedMonitor = setInterval(() => {
       const video = document.querySelector<HTMLVideoElement>('video');
       if (video) {
         const currentSpeed = video.playbackRate;
@@ -259,6 +260,11 @@
   }
 
   monitorSpeedChanges();
+
+  window.addEventListener('beforeunload', () => {
+    clearInterval(speedEnforcer);
+    if (speedMonitor) clearInterval(speedMonitor);
+  });
 
   (window as any).setEchoSpeed = function(speed: number): string {
     forceSetSpeed(speed);

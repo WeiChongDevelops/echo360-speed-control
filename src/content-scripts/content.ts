@@ -5,6 +5,8 @@
     type: string;
     speed?: number;
     enabled?: boolean;
+    linkedinIcon?: string;
+    hideSlowSpeeds?: boolean;
   }
 
   interface ChromeMessage {
@@ -16,11 +18,12 @@
   interface SpeedResponse {
     speed?: number;
     success?: boolean;
+    connected?: boolean;
+    hasVideo?: boolean;
   }
 
   function getDomainKey(): string {
-    const hostname = window.location.hostname.replace('www.', '');
-    return `speed_${hostname}`;
+    return 'speed_echo360';
   }
 
   const isEcho360 = window.location.hostname.includes('echo360');
@@ -32,7 +35,7 @@
     script.remove();
 
     const key = getDomainKey();
-    chrome.storage.sync.get([key, 'shortcutsEnabled'], (result) => {
+    chrome.storage.sync.get([key, 'shortcutsEnabled', 'hideSlowSpeeds'], (result) => {
       if (result[key]) {
         const savedSpeed = parseFloat(result[key] as string);
         window.postMessage({
@@ -47,10 +50,22 @@
         type: 'SET_SHORTCUTS_ENABLED',
         enabled: shortcutsEnabled
       } as SpeedMessage, '*');
+
+      // Send hide-slow-speeds preference (default false)
+      window.postMessage({
+        type: 'SET_HIDE_SLOW_SPEEDS',
+        hideSlowSpeeds: result.hideSlowSpeeds === true
+      } as SpeedMessage, '*');
+
+      // Send LinkedIn icon URL to injected (ARCH-001: chrome.* lives in content script only)
+      window.postMessage({
+        type: 'SET_ASSET_URLS',
+        linkedinIcon: chrome.runtime.getURL('assets/icons/linkedin.svg')
+      } as SpeedMessage, '*');
     });
   };
   script.onerror = function() {
-    console.error('Failed to load injected script');
+    console.error('[Echo360 Speed Control] Failed to load injected script');
   };
   (document.head || document.documentElement).appendChild(script);
 
@@ -79,6 +94,8 @@
         action: 'speedChanged',
         speed: event.data.speed
       });
+    } else if (event.data.type === 'HIDE_SLOW_SPEEDS_CHANGED') {
+      chrome.storage.sync.set({ hideSlowSpeeds: event.data.hideSlowSpeeds === true });
     }
   });
 
@@ -96,15 +113,21 @@
     } else if (request.action === 'getSpeed') {
       window.postMessage({ type: 'GET_ECHO_SPEED' } as SpeedMessage, '*');
       const listener = (event: MessageEvent) => {
+        if (event.source !== window) return;
         if (event.data.type === 'CURRENT_ECHO_SPEED') {
           window.removeEventListener('message', listener);
-          sendResponse({ speed: event.data.speed } as SpeedResponse);
+          const hasVideo = document.querySelector('video') !== null;
+          sendResponse({
+            connected: true,
+            hasVideo,
+            speed: event.data.speed
+          } as SpeedResponse);
         }
       };
       window.addEventListener('message', listener);
       setTimeout(() => {
         window.removeEventListener('message', listener);
-        sendResponse({ speed: 1 } as SpeedResponse);
+        sendResponse({ connected: true, hasVideo: false, speed: 1 } as SpeedResponse);
       }, 1000);
 
       return true;

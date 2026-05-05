@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Echo360 Speed Control - Faster Lectures",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "description": "Override Echo360 playback speed restrictions for university lectures worldwide",
   "permissions": [
     "activeTab",
@@ -135,7 +135,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["injected/injector.js", "injected/injector-simple.js", "lib/constants.js", "lib/utils.js"],
+      "resources": ["injected/injector.js", "injected/injector-simple.js", "lib/constants.js", "lib/utils.js", "assets/icons/linkedin.svg"],
       "matches": ["<all_urls>"]
     }
   ]

@@ -2,8 +2,7 @@
 (function () {
     'use strict';
     function getDomainKey() {
-        const hostname = window.location.hostname.replace('www.', '');
-        return `speed_${hostname}`;
+        return 'speed_echo360';
     }
     const isEcho360 = window.location.hostname.includes('echo360');
     const scriptName = isEcho360 ? 'injected/injector-simple.js' : 'injected/injector.js';
@@ -12,7 +11,7 @@
     script.onload = function () {
         script.remove();
         const key = getDomainKey();
-        chrome.storage.sync.get([key, 'shortcutsEnabled'], (result) => {
+        chrome.storage.sync.get([key, 'shortcutsEnabled', 'hideSlowSpeeds'], (result) => {
             if (result[key]) {
                 const savedSpeed = parseFloat(result[key]);
                 window.postMessage({
@@ -26,10 +25,20 @@
                 type: 'SET_SHORTCUTS_ENABLED',
                 enabled: shortcutsEnabled
             }, '*');
+            // Send hide-slow-speeds preference (default false)
+            window.postMessage({
+                type: 'SET_HIDE_SLOW_SPEEDS',
+                hideSlowSpeeds: result.hideSlowSpeeds === true
+            }, '*');
+            // Send LinkedIn icon URL to injected (ARCH-001: chrome.* lives in content script only)
+            window.postMessage({
+                type: 'SET_ASSET_URLS',
+                linkedinIcon: chrome.runtime.getURL('assets/icons/linkedin.svg')
+            }, '*');
         });
     };
     script.onerror = function () {
-        console.error('Failed to load injected script');
+        console.error('[Echo360 Speed Control] Failed to load injected script');
     };
     (document.head || document.documentElement).appendChild(script);
     window.addEventListener('storage', (e) => {
@@ -56,6 +65,9 @@
                 speed: event.data.speed
             });
         }
+        else if (event.data.type === 'HIDE_SLOW_SPEEDS_CHANGED') {
+            chrome.storage.sync.set({ hideSlowSpeeds: event.data.hideSlowSpeeds === true });
+        }
     });
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === 'setSpeed') {
@@ -71,15 +83,22 @@
         else if (request.action === 'getSpeed') {
             window.postMessage({ type: 'GET_ECHO_SPEED' }, '*');
             const listener = (event) => {
+                if (event.source !== window)
+                    return;
                 if (event.data.type === 'CURRENT_ECHO_SPEED') {
                     window.removeEventListener('message', listener);
-                    sendResponse({ speed: event.data.speed });
+                    const hasVideo = document.querySelector('video') !== null;
+                    sendResponse({
+                        connected: true,
+                        hasVideo,
+                        speed: event.data.speed
+                    });
                 }
             };
             window.addEventListener('message', listener);
             setTimeout(() => {
                 window.removeEventListener('message', listener);
-                sendResponse({ speed: 1 });
+                sendResponse({ connected: true, hasVideo: false, speed: 1 });
             }, 1000);
             return true;
         }

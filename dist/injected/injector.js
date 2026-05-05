@@ -152,7 +152,7 @@
             shortcutsEnabled = event.data.enabled;
         }
     });
-    setInterval(() => {
+    const speedEnforcer = setInterval(() => {
         const videos = document.querySelectorAll('video, video.leader, video.sc-bUyWVT, video[data-test="leader"], video[role="region"]');
         videos.forEach(video => {
             if (targetSpeed !== 1.0 && video.playbackRate !== targetSpeed) {
@@ -211,9 +211,10 @@
         }
     }
     document.addEventListener('keydown', handleKeyboardShortcuts);
+    let speedMonitor = null;
     function monitorSpeedChanges() {
         let lastSpeed = 1.0;
-        setInterval(() => {
+        speedMonitor = setInterval(() => {
             const video = document.querySelector('video');
             if (video) {
                 const currentSpeed = video.playbackRate;
@@ -230,6 +231,11 @@
         }, 500);
     }
     monitorSpeedChanges();
+    window.addEventListener('beforeunload', () => {
+        clearInterval(speedEnforcer);
+        if (speedMonitor)
+            clearInterval(speedMonitor);
+    });
     window.setEchoSpeed = function (speed) {
         forceSetSpeed(speed);
         return 'Speed set to ' + speed;
