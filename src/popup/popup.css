@@ -136,6 +136,19 @@ h2 {
   color: var(--accent);
 }
 
+.current-speed-value-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.eta-line {
+  font-size: 13px;
+  color: var(--accent);
+  margin-top: 4px;
+  min-height: 1em; /* prevent layout jitter when hidden */
+}
+
 .slider-container {
   margin-bottom: 20px;
 }

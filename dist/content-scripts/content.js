@@ -88,10 +88,18 @@
                 if (event.data.type === 'CURRENT_ECHO_SPEED') {
                     window.removeEventListener('message', listener);
                     const hasVideo = document.querySelector('video') !== null;
+                    const rawDuration = typeof event.data.duration === 'number' ? event.data.duration : NaN;
+                    const rawCurrentTime = typeof event.data.currentTime === 'number' ? event.data.currentTime : 0;
+                    const durationKind = Number.isNaN(rawDuration) ? 'unknown'
+                        : !Number.isFinite(rawDuration) ? 'live'
+                            : 'finite';
                     sendResponse({
                         connected: true,
                         hasVideo,
-                        speed: event.data.speed
+                        speed: event.data.speed,
+                        durationKind,
+                        duration: durationKind === 'finite' ? rawDuration : 0,
+                        currentTime: rawCurrentTime
                     });
                 }
             };

@@ -20,6 +20,9 @@
     success?: boolean;
     connected?: boolean;
     hasVideo?: boolean;
+    durationKind?: 'finite' | 'live' | 'unknown';
+    duration?: number;
+    currentTime?: number;
   }
 
   type DetectionResult =
@@ -34,6 +37,35 @@
     enabled?: boolean;
   }
 
+  type DurationKind = 'finite' | 'live' | 'unknown';
+
+  function formatSpeed(s: number): string {
+    return `${Math.round(s * 100) / 100}x`;
+  }
+
+  function etaMainPart(seconds: number): string {
+    if (seconds < 60) return '<1 min left';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} min left`;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return `${h}h ${m}m left`;
+  }
+
+  function renderEtaInto(el: HTMLElement, seconds: number | null, kind: DurationKind, speed: number): void {
+    el.textContent = ''; // clear prior children
+    if (seconds === null) return;
+    if (kind !== 'finite') return;
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    el.appendChild(document.createTextNode(`${etaMainPart(seconds)} @ `));
+    const strong = document.createElement('strong');
+    strong.style.fontWeight = '700';
+    strong.textContent = formatSpeed(speed);
+    el.appendChild(strong);
+    if (speed > 1) {
+      el.appendChild(document.createTextNode(' ⚡'));
+    }
+  }
+
   const currentSpeedEl = document.getElementById('currentSpeed')!;
   const speedSlider = document.getElementById('speedSlider') as HTMLInputElement;
   const sliderValueEl = document.getElementById('sliderValue')!;
@@ -44,11 +76,103 @@
   const themeToggle = document.getElementById('themeToggle')!;
   const shortcutsToggle = document.getElementById('shortcutsToggle') as HTMLInputElement;
   const shortcutsDisclosure = document.querySelector('.shortcuts-disclosure')!;
+  const etaEl = document.getElementById('eta') as HTMLDivElement | null;
 
   let currentDomain = '';
   let currentStatusState: StatusState = 'detecting';
   let lastStatusPayload: StatusPayload = {};
   let statusRevertTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // EtaState (popup-local; not persisted) per SDD § Application Data Models.
+  type EtaDurationKind = DurationKind | 'absent';
+  let cachedDuration = 0;
+  let cachedCurrentTime = 0;
+  let cachedSpeed = 1;
+  let cachedDurationKind: EtaDurationKind = 'absent';
+  let etaTickHandle: ReturnType<typeof setInterval> | undefined;
+
+  const ETA_VISIBLE_STATES: StatusState[] = ['connected_idle', 'connected_speed_set'];
+
+  function etaUpdateFromResponse(response: SpeedResponse): void {
+    if ('durationKind' in response && response.durationKind !== undefined) {
+      cachedDuration = response.duration ?? 0;
+      cachedCurrentTime = response.currentTime ?? 0;
+      cachedDurationKind = response.durationKind;
+      if (typeof response.speed === 'number') {
+        cachedSpeed = response.speed;
+      }
+    } else {
+      cachedDurationKind = 'absent';
+    }
+  }
+
+  function etaCompute(): number | null {
+    if (cachedDurationKind !== 'finite') return null;
+    if (cachedCurrentTime >= cachedDuration) return null;
+    return (cachedDuration - cachedCurrentTime) / cachedSpeed;
+  }
+
+  function etaRender(): void {
+    if (!etaEl) return;
+    const remaining = etaCompute();
+    const kindForFormat: DurationKind = cachedDurationKind === 'absent' ? 'unknown' : cachedDurationKind;
+    renderEtaInto(etaEl, remaining, kindForFormat, cachedSpeed);
+  }
+
+  function etaStartTicking(): void {
+    if (etaTickHandle !== undefined) return;
+    etaTickHandle = setInterval(() => {
+      cachedCurrentTime += cachedSpeed;
+      etaRender();
+    }, 1000);
+  }
+
+  function etaStopTicking(): void {
+    if (etaTickHandle !== undefined) {
+      clearInterval(etaTickHandle);
+      etaTickHandle = undefined;
+    }
+  }
+
+  // Verbose, screen-reader-friendly version of the eta. Distinct from the
+  // visible compact form (`24 min left` / `1h 13m left`); EARS-F5-2 wants a
+  // self-disambiguating phrase delivered via the `#currentSpeed` aria-label.
+  // Returns the leading `, ` so callers can string-concat directly.
+  function etaSuffixForAriaLabel(): string {
+    const remaining = etaCompute();
+    if (remaining === null) return '';
+    if (!Number.isFinite(remaining) || remaining <= 0) return '';
+    if (remaining < 60) return ', less than a minute left';
+    if (remaining < 3600) {
+      const m = Math.floor(remaining / 60);
+      return m === 1 ? ', 1 minute left' : `, ${m} minutes left`;
+    }
+    const h = Math.floor(remaining / 3600);
+    const m = Math.floor((remaining % 3600) / 60);
+    const hPart = h === 1 ? '1 hour' : `${h} hours`;
+    if (m === 0) return `, ${hPart} left`;
+    const mPart = m === 1 ? '1 minute' : `${m} minutes`;
+    return `, ${hPart} ${mPart} left`;
+  }
+
+  // Centralised aria-label writer. EARS-F5-2: every speed-textContent change
+  // must mirror into aria-label so the single aria-live polite announcement
+  // (driven by textContent change on #currentSpeed) carries the eta too.
+  // Spec 001 M3-1 silent-restore preservation: do NOT call this from paths
+  // that don't already update textContent — keeping setter symmetry with
+  // textContent prevents accidental announcement coupling.
+  function applyCurrentSpeedAria(speed: number): void {
+    if (!currentSpeedEl) return;
+    currentSpeedEl.setAttribute(
+      'aria-label',
+      `Current playback speed ${speed.toFixed(2)}x${etaSuffixForAriaLabel()}`,
+    );
+  }
+
+  function resetCurrentSpeedAria(): void {
+    if (!currentSpeedEl) return;
+    currentSpeedEl.setAttribute('aria-label', 'Current playback speed');
+  }
 
   setStatusState('detecting');
   initTheme();
@@ -115,6 +239,15 @@
     const errorStates: StatusState[] = ['no_video', 'transient_error', 'persistent_error', 'invalid_page'];
     retryButton.classList.toggle('hidden', !errorStates.includes(currentStatusState));
     reportLink.classList.toggle('hidden', currentStatusState !== 'persistent_error');
+
+    // Gate eta visibility on FSM state (EARS-F2-4). Tick start/stop is controlled here;
+    // start happens in the getSpeed response hook to avoid double-starting.
+    if (ETA_VISIBLE_STATES.includes(currentStatusState)) {
+      etaRender();
+    } else {
+      etaStopTicking();
+      if (etaEl) etaEl.textContent = '';
+    }
   }
 
   function updateActivePreset(currentSpeed: number): void {
@@ -200,6 +333,12 @@
         updateSliderDisplay();
         updateActivePreset(request.speed!);
         setStatusState('connected_speed_set', { speed: request.speed! });
+
+        // Eta wiring (T1.4 / EARS-F2-2): refresh immediately, no waiting for next tick.
+        cachedSpeed = request.speed!;
+        etaRender();
+        // T1.5 / EARS-F5-2: mirror textContent into aria-label with eta suffix.
+        applyCurrentSpeedAria(request.speed!);
       }
     });
   }
@@ -238,18 +377,27 @@
         updateSliderDisplay();
         updateActivePreset(result.speed);
         setStatusState('connected_idle');
+        // T1.5 / EARS-F5-2: aria-label initial render. Eta cache is updated
+        // by the getCurrentSpeed callback (etaUpdateFromResponse) BEFORE this
+        // function runs at all... actually no, this runs first. We re-apply
+        // aria-label after etaUpdateFromResponse below (in getCurrentSpeed
+        // callback) to ensure the suffix reflects the freshly-cached eta.
+        applyCurrentSpeedAria(result.speed);
         setTimeout(() => loadSpeedForDomain(), 100);
         return;
       case 'connected_no_video':
         currentSpeedEl.textContent = 'N/A';
+        resetCurrentSpeedAria();
         setStatusState('no_video');
         return;
       case 'not_connected':
         currentSpeedEl.textContent = 'N/A';
+        resetCurrentSpeedAria();
         setStatusState('persistent_error');
         return;
       case 'invalid_page':
         currentSpeedEl.textContent = 'N/A';
+        resetCurrentSpeedAria();
         setStatusState('invalid_page');
         return;
     }
@@ -268,6 +416,30 @@
         chrome.tabs.sendMessage(tabs[0].id!, { action: 'getSpeed' }, (response: SpeedResponse) => {
           const result = classifyDetection(tabs[0].url, chrome.runtime.lastError, response);
           renderDetection(result);
+
+          // Eta wiring (T1.4). Update cache from response, then start/stop ticking
+          // based on the just-set FSM state. SDD Example 3 backwards-compat:
+          // missing durationKind → cachedDurationKind = 'absent' → etaCompute returns null.
+          if (response) {
+            etaUpdateFromResponse(response);
+          } else {
+            cachedDurationKind = 'absent';
+          }
+          if (ETA_VISIBLE_STATES.includes(currentStatusState)) {
+            etaRender();
+            etaStartTicking();
+            // T1.5 / EARS-F5-2: re-apply aria-label now that eta cache is
+            // populated. renderDetection already set aria-label with an
+            // empty suffix (cache was stale at that point); this overwrite
+            // adds the eta suffix. aria-label changes don't trigger
+            // aria-live announcements, so spec 001 M3-1 is preserved.
+            if (result.kind === 'connected_with_video') {
+              applyCurrentSpeedAria(result.speed);
+            }
+          } else {
+            etaStopTicking();
+            if (etaEl) etaEl.textContent = '';
+          }
         });
       }
     });
@@ -298,6 +470,13 @@
 
             speedSlider.value = speed.toString();
             updateSliderDisplay();
+
+            // Eta wiring (T1.4 / EARS-F2-2): update cached speed for the local-driven
+            // change so the sub-line reflects the new ETA within the 200ms budget.
+            cachedSpeed = parseFloat(speed.toString());
+            etaRender();
+            // T1.5 / EARS-F5-2: mirror textContent into aria-label with eta suffix.
+            applyCurrentSpeedAria(parseFloat(speed.toString()));
           } else {
             setStatusState('no_video');
           }

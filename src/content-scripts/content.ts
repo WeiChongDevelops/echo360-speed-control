@@ -7,6 +7,8 @@
     enabled?: boolean;
     linkedinIcon?: string;
     hideSlowSpeeds?: boolean;
+    duration?: number;
+    currentTime?: number;
   }
 
   interface ChromeMessage {
@@ -20,6 +22,9 @@
     success?: boolean;
     connected?: boolean;
     hasVideo?: boolean;
+    durationKind?: 'finite' | 'live' | 'unknown';
+    duration?: number;
+    currentTime?: number;
   }
 
   function getDomainKey(): string {
@@ -117,10 +122,19 @@
         if (event.data.type === 'CURRENT_ECHO_SPEED') {
           window.removeEventListener('message', listener);
           const hasVideo = document.querySelector('video') !== null;
+          const rawDuration: number = typeof event.data.duration === 'number' ? event.data.duration : NaN;
+          const rawCurrentTime: number = typeof event.data.currentTime === 'number' ? event.data.currentTime : 0;
+          const durationKind: 'finite' | 'live' | 'unknown' =
+            Number.isNaN(rawDuration) ? 'unknown'
+              : !Number.isFinite(rawDuration) ? 'live'
+              : 'finite';
           sendResponse({
             connected: true,
             hasVideo,
-            speed: event.data.speed
+            speed: event.data.speed,
+            durationKind,
+            duration: durationKind === 'finite' ? rawDuration : 0,
+            currentTime: rawCurrentTime
           } as SpeedResponse);
         }
       };

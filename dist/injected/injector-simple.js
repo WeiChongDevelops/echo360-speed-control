@@ -1,6 +1,35 @@
 "use strict";
 (function () {
     'use strict';
+    function formatSpeed(s) {
+        return `${Math.round(s * 100) / 100}x`;
+    }
+    function etaMainPart(seconds) {
+        if (seconds < 60)
+            return '<1 min left';
+        if (seconds < 3600)
+            return `${Math.floor(seconds / 60)} min left`;
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        return `${h}h ${m}m left`;
+    }
+    function renderEtaInto(el, seconds, kind, speed) {
+        el.textContent = ''; // clear prior children
+        if (seconds === null)
+            return;
+        if (kind !== 'finite')
+            return;
+        if (!Number.isFinite(seconds) || seconds <= 0)
+            return;
+        el.appendChild(document.createTextNode(`${etaMainPart(seconds)} @ `));
+        const strong = document.createElement('strong');
+        strong.style.fontWeight = '700';
+        strong.textContent = formatSpeed(speed);
+        el.appendChild(strong);
+        if (speed > 1) {
+            el.appendChild(document.createTextNode(' ⚡'));
+        }
+    }
     let targetSpeed = 1.0;
     let enforceSpeed = false;
     let speedOverlay = null;
@@ -8,6 +37,75 @@
     let shortcutsEnabled = true;
     let linkedinIconUrl = null;
     let hideSlowSpeeds = false;
+    const ETA_DATA_ATTR = 'data-eta-display';
+    let etaSpan = null;
+    let etaTickHandle;
+    function classifyDuration(d) {
+        if (Number.isNaN(d))
+            return 'unknown';
+        if (!Number.isFinite(d))
+            return 'live';
+        return 'finite';
+    }
+    function injectEtaSpan() {
+        const anchor = document.getElementById('player-controls');
+        if (!anchor)
+            return; // silent absence (PRD/F1-5)
+        if (anchor.parentElement?.querySelector(`[${ETA_DATA_ATTR}]`))
+            return;
+        const span = document.createElement('span');
+        span.setAttribute(ETA_DATA_ATTR, 'true');
+        span.setAttribute('aria-hidden', 'true');
+        // Copy the timestamp's computed font so the eta matches family/size/weight
+        // and shares the same line-box height for clean vertical centering against
+        // #player-controls in the parent flex row.
+        const anchorStyle = window.getComputedStyle(anchor);
+        span.style.cssText = `
+      display: inline-flex;
+      align-items: center;
+      align-self: center;
+      margin-left: 12px;
+      font-family: ${anchorStyle.fontFamily};
+      font-size: ${anchorStyle.fontSize};
+      font-weight: ${anchorStyle.fontWeight};
+      line-height: ${anchorStyle.lineHeight};
+      color: #4CAF50;
+      user-select: none;
+    `;
+        anchor.insertAdjacentElement('afterend', span);
+        etaSpan = span;
+    }
+    function updateEtaSpan() {
+        if (!etaSpan)
+            return;
+        const video = document.querySelector('video');
+        if (!video) {
+            etaSpan.textContent = '';
+            return;
+        }
+        const kind = classifyDuration(video.duration);
+        if (kind !== 'finite') {
+            renderEtaInto(etaSpan, null, kind, video.playbackRate); // PRD/F4-1, F4-2
+            return;
+        }
+        if (video.currentTime >= video.duration) {
+            renderEtaInto(etaSpan, null, 'finite', video.playbackRate); // PRD/F4-3 (ended)
+            return;
+        }
+        const remaining = (video.duration - video.currentTime) / video.playbackRate;
+        renderEtaInto(etaSpan, remaining, 'finite', video.playbackRate);
+    }
+    function startEtaTicker() {
+        if (etaTickHandle !== undefined)
+            return;
+        etaTickHandle = setInterval(() => {
+            if (!etaSpan || !etaSpan.isConnected) {
+                etaSpan = null;
+                injectEtaSpan();
+            }
+            updateEtaSpan();
+        }, 1000);
+    }
     function applySlowSpeedFilter() {
         const items = document.querySelectorAll('#playback-speed-menu li[data-custom-speed]');
         items.forEach(item => {
@@ -520,6 +618,10 @@
         if (speedMonitor)
             clearInterval(speedMonitor);
         menuObserver.disconnect();
+        if (etaTickHandle !== undefined) {
+            clearInterval(etaTickHandle);
+            etaTickHandle = undefined;
+        }
     });
     window.addEventListener('message', (event) => {
         if (event.source !== window)
@@ -531,10 +633,14 @@
         else if (event.data.type === 'GET_ECHO_SPEED') {
             const video = document.querySelector('video');
             const currentSpeed = video ? video.playbackRate : 1;
+            const rawDuration = video ? video.duration : NaN;
+            const rawCurrentTime = video ? video.currentTime : 0;
             console.log(`[Echo360 Speed Control] Message received GET_ECHO_SPEED: responding with ${currentSpeed.toFixed(2)}x`);
             window.postMessage({
                 type: 'CURRENT_ECHO_SPEED',
-                speed: currentSpeed
+                speed: currentSpeed,
+                duration: rawDuration,
+                currentTime: rawCurrentTime
             }, '*');
         }
         else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {
@@ -551,5 +657,7 @@
             applySlowSpeedFilter();
         }
     });
+    injectEtaSpan();
+    startEtaTicker();
     console.log('[Echo360 Speed Control] Extension injected and initialized (injector-simple.js)');
 })();
