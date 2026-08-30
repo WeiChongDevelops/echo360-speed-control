@@ -106,6 +106,7 @@
   }
 
   function forceSetSpeed(speed: number): void {
+    speed = Math.min(4, Math.max(0.25, speed));
     targetSpeed = speed;
 
     showSpeedOverlay(speed);
@@ -213,7 +214,21 @@
     };
   }
 
+  function isEditableTarget(e: KeyboardEvent): boolean {
+    const el = (e.composedPath ? e.composedPath()[0] : e.target) as HTMLElement;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag === 'INPUT') {
+      const nonTextTypes = ['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image', 'hidden'];
+      return !nonTextTypes.includes((el as HTMLInputElement).type);
+    }
+    return false;
+  }
+
   function handleKeyboardShortcuts(event: KeyboardEvent): void {
+    if (isEditableTarget(event)) return;
     if (!shortcutsEnabled) return;
 
     if (event.shiftKey && (event.key === '<' || event.key === ',')) {
@@ -229,7 +244,7 @@
       const video = document.querySelector<HTMLVideoElement>('video');
       if (video) {
         const currentSpeed = video.playbackRate;
-        const newSpeed = Math.min(5, currentSpeed + 0.25);
+        const newSpeed = Math.min(4, currentSpeed + 0.25);
         forceSetSpeed(newSpeed);
       }
     }

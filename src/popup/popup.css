@@ -5,8 +5,10 @@
   --text-primary: #e0e0e0;
   --text-secondary: #999;
   --text-bright: #fff;
-  --accent: #4CAF50;
-  --accent-hover: #5CBF60;
+  --accent: #46B864;
+  --accent-hover: #4ECC6F;
+  --accent-fill: #269644;
+  --accent-fill-hover: #22853C;
   --border: #444;
   --border-secondary: #333;
   --error-bg: #2a1a1a;
@@ -21,8 +23,10 @@
   --text-primary: #333333;
   --text-secondary: #666666;
   --text-bright: #000000;
-  --accent: #4CAF50;
-  --accent-hover: #45a049;
+  --accent: #1F7A38;
+  --accent-hover: #1C7033;
+  --accent-fill: #269644;
+  --accent-fill-hover: #22853C;
   --border: #ddd;
   --border-secondary: #e0e0e0;
   --error-bg: #ffebee;
@@ -239,52 +243,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-color: var(--accent-hover);
 }
 
-.custom-speed {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 15px;
-}
-
-.custom-input {
-  flex: 1;
-  padding: 8px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  border-radius: 6px;
-  font-size: 14px;
-  transition: all 0.3s;
-}
-
-.custom-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.apply-btn {
-  padding: 8px 20px;
-  background: var(--accent);
-  border: none;
-  color: white;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.apply-btn:hover {
-  background: var(--accent-hover);
-}
-
-.apply-btn:focus {
-  outline: 2px solid var(--text-bright);
-  outline-offset: 2px;
-}
-
-.apply-btn:active {
-  transform: scale(0.95);
-}
-
 .status {
   text-align: center;
   padding: 8px;
@@ -323,20 +281,20 @@ input[type="range"]::-webkit-slider-thumb:hover {
   align-items: center;
   gap: 8px;
   padding: 10px 20px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: white;
   text-decoration: none;
   border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
   transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+  box-shadow: 0 2px 4px rgba(38, 150, 68, 0.35);
 }
 
 .kofi-button:hover {
-  background: var(--accent-hover);
+  background: var(--accent-fill-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.5);
+  box-shadow: 0 4px 12px rgba(38, 150, 68, 0.55);
 }
 
 .kofi-button:focus {

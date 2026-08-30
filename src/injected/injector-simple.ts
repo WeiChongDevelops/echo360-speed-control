@@ -6,6 +6,7 @@
     speed?: number;
     enabled?: boolean;
     linkedinIcon?: string;
+    kofiIcon?: string;
     hideSlowSpeeds?: boolean;
     duration?: number;
     currentTime?: number;
@@ -46,6 +47,7 @@
   let overlayTimeout: number | null = null;
   let shortcutsEnabled = true;
   let linkedinIconUrl: string | null = null;
+  let kofiIconUrl: string | null = null;
   let hideSlowSpeeds = false;
 
   const ETA_DATA_ATTR = 'data-eta-display';
@@ -80,7 +82,7 @@
       font-size: ${anchorStyle.fontSize};
       font-weight: ${anchorStyle.fontWeight};
       line-height: ${anchorStyle.lineHeight};
-      color: #4CAF50;
+      color: #46B864;
       user-select: none;
     `;
     anchor.insertAdjacentElement('afterend', span);
@@ -168,7 +170,7 @@
       top: 20px;
       right: 20px;
       background: rgba(0, 0, 0, 0.8);
-      color: #4CAF50;
+      color: #46B864;
       padding: 10px 20px;
       border-radius: 25px;
       font-size: 18px;
@@ -241,7 +243,7 @@
       speedSpan.textContent = speedText;
 
       if (speed > 2) {
-        speedSpan.style.color = '#4CAF50';
+        speedSpan.style.color = '#46B864';
         speedSpan.setAttribute('title', 'Speed above Echo360 native cap');
       } else {
         // S1: clear our override so Echo360's default styling shows through.
@@ -252,6 +254,7 @@
   }
 
   (window as any).setSpeed = function(speed: number): string {
+    speed = Math.min(4, Math.max(0.25, speed));
     console.log(`[Echo360 Speed Control] setSpeed called: ${speed.toFixed(2)}x (previous target: ${targetSpeed.toFixed(2)}x)`);
 
     targetSpeed = speed;
@@ -500,7 +503,7 @@
       position: relative;
       width: 32px;
       height: 18px;
-      background: ${hideSlowSpeeds ? '#4CAF50' : '#8C0047'};
+      background: ${hideSlowSpeeds ? '#46B864' : '#8C0047'};
       border-radius: 18px;
       transition: background-color 0.2s;
       flex-shrink: 0;
@@ -526,7 +529,7 @@
       e.stopPropagation();
       hideSlowSpeeds = !hideSlowSpeeds;
       toggleSwitch.setAttribute('aria-checked', hideSlowSpeeds ? 'true' : 'false');
-      toggleSwitch.style.background = hideSlowSpeeds ? '#4CAF50' : '#8C0047';
+      toggleSwitch.style.background = hideSlowSpeeds ? '#46B864' : '#8C0047';
       toggleKnob.style.transform = `translateX(${hideSlowSpeeds ? '14px' : '0'})`;
       applySlowSpeedFilter();
       window.postMessage({
@@ -537,37 +540,46 @@
 
     menu.appendChild(toggleItem);
 
-    // Footer CTA: accent-pill report link
+    // Footer CTA: report pill above, support pill below.
+    // Single-column grid so both pills take the width of the wider one.
     const ctaItem = document.createElement('li');
     ctaItem.setAttribute('role', 'presentation');
     ctaItem.setAttribute('data-custom-cta', 'true');
     ctaItem.style.cssText = `
       padding: 10px 16px 12px;
       list-style: none;
-      display: flex;
-      justify-content: center;
+      display: grid;
+      grid-auto-flow: row;
+      gap: 8px;
+      justify-content: stretch;
     `;
+
+    const PILL_BASE_CSS = `
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 16px;
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 600;
+      outline: none;
+    `;
+
+    // Report pill: ink green on a tint of itself
     const ctaLink = document.createElement('a');
     ctaLink.href = 'https://www.linkedin.com/in/wei-chong/';
     ctaLink.target = '_blank';
     ctaLink.rel = 'noopener noreferrer';
-    ctaLink.style.cssText = `
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
-      background: rgba(76, 175, 80, 0.12);
-      border: 1px solid #4CAF50;
-      border-radius: 16px;
-      color: #4CAF50;
-      text-decoration: none;
-      font-size: 11px;
-      font-weight: 600;
+    ctaLink.style.cssText = PILL_BASE_CSS + `
+      background: rgba(70, 184, 100, 0.12);
+      border: 1px solid #46B864;
+      color: #46B864;
       transition: background-color 0.15s;
-      outline: none;
     `;
-    ctaLink.addEventListener('mouseenter', () => { ctaLink.style.background = 'rgba(76, 175, 80, 0.22)'; });
-    ctaLink.addEventListener('mouseleave', () => { ctaLink.style.background = 'rgba(76, 175, 80, 0.12)'; });
+    ctaLink.addEventListener('mouseenter', () => { ctaLink.style.background = 'rgba(70, 184, 100, 0.22)'; });
+    ctaLink.addEventListener('mouseleave', () => { ctaLink.style.background = 'rgba(70, 184, 100, 0.12)'; });
     const ctaText = document.createElement('span');
     ctaText.textContent = 'Request feature / report bug';
     ctaLink.appendChild(ctaText);
@@ -581,6 +593,52 @@
       ctaLink.appendChild(ctaIcon);
     }
     ctaItem.appendChild(ctaLink);
+
+    // Support pill: filled, white label. Hover darkens so contrast rises rather than falls.
+    const KOFI_FILL = '#269644';
+    const KOFI_FILL_HOVER = '#22853C';
+    const kofiLink = document.createElement('a');
+    kofiLink.href = 'https://ko-fi.com/D1D31C0IQC';
+    kofiLink.target = '_blank';
+    kofiLink.rel = 'noopener noreferrer';
+    kofiLink.setAttribute('aria-label', 'Support on Ko-fi');
+    kofiLink.style.cssText = PILL_BASE_CSS + `
+      background: ${KOFI_FILL};
+      border: 1px solid ${KOFI_FILL};
+      color: #FFFFFF;
+      box-shadow: 0 2px 4px rgba(38, 150, 68, 0.35);
+      transition: background-color 0.15s, border-color 0.15s, box-shadow 0.2s;
+    `;
+    kofiLink.addEventListener('mouseenter', () => {
+      kofiLink.style.background = KOFI_FILL_HOVER;
+      kofiLink.style.borderColor = KOFI_FILL_HOVER;
+      kofiLink.style.boxShadow = '0 4px 12px rgba(38, 150, 68, 0.55)';
+    });
+    kofiLink.addEventListener('mouseleave', () => {
+      kofiLink.style.background = KOFI_FILL;
+      kofiLink.style.borderColor = KOFI_FILL;
+      kofiLink.style.boxShadow = '0 2px 4px rgba(38, 150, 68, 0.35)';
+    });
+    if (kofiIconUrl) {
+      const kofiIcon = document.createElement('img');
+      kofiIcon.src = kofiIconUrl;
+      kofiIcon.alt = '';
+      kofiIcon.width = 14;
+      kofiIcon.height = 14;
+      kofiIcon.style.display = 'block';
+      kofiIcon.addEventListener('error', () => {
+        console.error(`[Echo360 Speed Control] Ko-fi icon failed to load from ${kofiIconUrl}. Confirm assets/images/kofi.png is in web_accessible_resources and present in dist/.`);
+        kofiIcon.remove();
+      });
+      kofiLink.appendChild(kofiIcon);
+    } else {
+      console.warn('[Echo360 Speed Control] Ko-fi pill rendered without an icon: kofiIconUrl was never set by the content script.');
+    }
+    const kofiText = document.createElement('span');
+    kofiText.textContent = 'Buy me a coffee';
+    kofiLink.appendChild(kofiText);
+    ctaItem.appendChild(kofiLink);
+
     menu.appendChild(ctaItem);
   }
 
@@ -618,11 +676,11 @@
       if (speedSpan) {
         if (targetSpeed > 2) {
           if (!speedSpan.style.color) {
-            speedSpan.style.color = '#4CAF50';
+            speedSpan.style.color = '#46B864';
           }
         } else {
           // S1-4: don't let the fallback loop re-green at ≤2x.
-          if (speedSpan.style.color === 'rgb(76, 175, 80)' || speedSpan.style.color === '#4CAF50') {
+          if (speedSpan.style.color === 'rgb(70, 184, 100)' || speedSpan.style.color === '#46B864') {
             speedSpan.style.color = '';
           }
         }
@@ -630,7 +688,21 @@
     }
   }, 1000);
 
+  function isEditableTarget(e: KeyboardEvent): boolean {
+    const el = (e.composedPath ? e.composedPath()[0] : e.target) as HTMLElement;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag === 'INPUT') {
+      const nonTextTypes = ['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image', 'hidden'];
+      return !nonTextTypes.includes((el as HTMLInputElement).type);
+    }
+    return false;
+  }
+
   function handleKeyboardShortcuts(event: KeyboardEvent): void {
+    if (isEditableTarget(event)) return;
     if (!shortcutsEnabled) return;
 
     if (event.shiftKey && (event.key === '<' || event.key === ',')) {
@@ -715,6 +787,11 @@
     } else if (event.data.type === 'SET_ASSET_URLS') {
       if (typeof event.data.linkedinIcon === 'string') {
         linkedinIconUrl = event.data.linkedinIcon;
+      }
+      if (typeof event.data.kofiIcon === 'string') {
+        kofiIconUrl = event.data.kofiIcon;
+      } else {
+        console.warn('[Echo360 Speed Control] SET_ASSET_URLS carried no kofiIcon. Check that assets/images/kofi.png is listed in web_accessible_resources; the Ko-fi pill will render without its icon.');
       }
     } else if (event.data.type === 'SET_HIDE_SLOW_SPEEDS') {
       hideSlowSpeeds = event.data.hideSlowSpeeds === true;

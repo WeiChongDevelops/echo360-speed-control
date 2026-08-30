@@ -20,7 +20,7 @@ export const ACTIONS = {
 // Speed control configuration
 export const SPEED_CONFIG = {
     MIN: 0.25,
-    MAX: 5.0,
+    MAX: 4.0,
     STEP: 0.25,
     DEFAULT: 1.0,
     PRESETS: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3]

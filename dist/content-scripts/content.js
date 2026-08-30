@@ -30,10 +30,17 @@
                 type: 'SET_HIDE_SLOW_SPEEDS',
                 hideSlowSpeeds: result.hideSlowSpeeds === true
             }, '*');
-            // Send LinkedIn icon URL to injected (ARCH-001: chrome.* lives in content script only)
+            // Send icon URLs to injected (ARCH-001: chrome.* lives in content script only)
+            const assetUrls = {
+                linkedinIcon: chrome.runtime.getURL('assets/icons/linkedin.svg'),
+                kofiIcon: chrome.runtime.getURL('assets/images/kofi.png')
+            };
+            if (!assetUrls.kofiIcon) {
+                console.error('[Echo360 Speed Control] chrome.runtime.getURL returned nothing for assets/images/kofi.png. It is probably missing from web_accessible_resources in manifest.json.');
+            }
             window.postMessage({
                 type: 'SET_ASSET_URLS',
-                linkedinIcon: chrome.runtime.getURL('assets/icons/linkedin.svg')
+                ...assetUrls
             }, '*');
         });
     };

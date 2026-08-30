@@ -89,6 +89,7 @@
         });
     }
     function forceSetSpeed(speed) {
+        speed = Math.min(4, Math.max(0.25, speed));
         targetSpeed = speed;
         showSpeedOverlay(speed);
         updateSpeedButton(speed);
@@ -188,7 +189,24 @@
             return originalMax.apply(this, args);
         };
     }
+    function isEditableTarget(e) {
+        const el = (e.composedPath ? e.composedPath()[0] : e.target);
+        if (!el)
+            return false;
+        if (el.isContentEditable)
+            return true;
+        const tag = el.tagName;
+        if (tag === 'TEXTAREA' || tag === 'SELECT')
+            return true;
+        if (tag === 'INPUT') {
+            const nonTextTypes = ['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image', 'hidden'];
+            return !nonTextTypes.includes(el.type);
+        }
+        return false;
+    }
     function handleKeyboardShortcuts(event) {
+        if (isEditableTarget(event))
+            return;
         if (!shortcutsEnabled)
             return;
         if (event.shiftKey && (event.key === '<' || event.key === ',')) {
@@ -205,7 +223,7 @@
             const video = document.querySelector('video');
             if (video) {
                 const currentSpeed = video.playbackRate;
-                const newSpeed = Math.min(5, currentSpeed + 0.25);
+                const newSpeed = Math.min(4, currentSpeed + 0.25);
                 forceSetSpeed(newSpeed);
             }
         }

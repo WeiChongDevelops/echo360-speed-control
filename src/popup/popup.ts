@@ -177,6 +177,7 @@
   setStatusState('detecting');
   initTheme();
   initShortcuts();
+  initPresetVisibility();
   getCurrentSpeed();
   listenForSpeedChanges();
 
@@ -279,6 +280,17 @@
       const enabled = result.shortcutsEnabled !== false; // Default to true
       shortcutsToggle.checked = enabled;
       shortcutsDisclosure.classList.toggle('disabled', !enabled);
+    });
+  }
+
+  // Read once at popup open; a mid-session toggle on the page stays stale until reopen (decision D1).
+  function initPresetVisibility(): void {
+    chrome.storage.sync.get(['hideSlowSpeeds'], (result) => {
+      const hide = result.hideSlowSpeeds === true; // absent defaults to false
+      presetButtons.forEach(button => {
+        const presetSpeed = parseFloat((button as HTMLElement).dataset.speed!);
+        (button as HTMLElement).hidden = hide && presetSpeed < 1;
+      });
     });
   }
 
@@ -510,7 +522,22 @@
     getCurrentSpeed();
   });
 
+  function isEditableTarget(e: KeyboardEvent): boolean {
+    const el = (e.composedPath ? e.composedPath()[0] : e.target) as HTMLElement;
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName;
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag === 'INPUT') {
+      const nonTextTypes = ['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image', 'hidden'];
+      return !nonTextTypes.includes((el as HTMLInputElement).type);
+    }
+    return false;
+  }
+
   document.addEventListener('keydown', (e) => {
+    if (isEditableTarget(e)) return;
+
     // Number keys for quick speed selection — clamp to slider max (4x)
     if (e.key >= '1' && e.key <= '9') {
       const speed = parseInt(e.key);

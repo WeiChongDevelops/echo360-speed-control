@@ -135,7 +135,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["injected/injector.js", "injected/injector-simple.js", "lib/constants.js", "lib/utils.js", "assets/icons/linkedin.svg"],
+      "resources": ["injected/injector.js", "injected/injector-simple.js", "lib/constants.js", "lib/utils.js", "assets/icons/linkedin.svg", "assets/images/kofi.png"],
       "matches": ["<all_urls>"]
     }
   ]
