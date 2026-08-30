@@ -595,9 +595,16 @@
             updateSliderDisplay();
             setSpeed(newValue);
         }
-        // R for reset to 1x
+        // R delegates to the page-owned 1x toggle (ADR-7); the popup holds no toggle
+        // state, and the resulting speed repaints via the existing speedChanged chain.
         if (e.key === 'r' || e.key === 'R') {
-            setSpeed(1);
+            // A toggle send is a user speed action: it supersedes a pending restore.
+            clearRestoreSpeedTimer();
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (tabs[0]) {
+                    chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleStudySpeed' });
+                }
+            });
         }
         // T for theme toggle
         if (e.key === 't' || e.key === 'T') {

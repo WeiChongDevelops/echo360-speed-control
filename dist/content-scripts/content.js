@@ -201,5 +201,13 @@
             sendResponse({ success: true });
             return true;
         }
+        else if (request.action === 'toggleStudySpeed') {
+            // Forward the popup's R press to the injected toggle; the page owns the toggle state (ADR-7).
+            window.postMessage({
+                type: 'TOGGLE_STUDY_SPEED'
+            }, '*');
+            sendResponse({ success: true });
+            return true;
+        }
     });
 })();

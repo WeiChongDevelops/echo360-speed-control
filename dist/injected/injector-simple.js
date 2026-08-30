@@ -39,6 +39,11 @@
     let linkedinIconUrl = null;
     let kofiIconUrl = null;
     let hideSlowSpeeds = false;
+    // Last non-1x applied or observed speed; survives a manual change to 1x (C3, ADR-7).
+    let previousStudySpeed = null;
+    // Handle of the current post-setSpeed drift enforcer, so each setSpeed call
+    // cancels the previous one instead of stacking overlapping intervals.
+    let driftEnforcer = null;
     const ETA_DATA_ATTR = 'data-eta-display';
     let etaSpan = null;
     let etaTickHandle;
@@ -139,6 +144,11 @@
                     if (value > 2) {
                         console.log(`[Echo360 Speed Control] Property descriptor: accepting speed ${value.toFixed(2)}x (target was ${targetSpeed.toFixed(2)}x)`);
                         targetSpeed = value;
+                        // The only observation hook besides setSpeed. monitorSpeedChanges is
+                        // deliberately not hooked: it reads the overridden playbackRate getter,
+                        // which returns targetSpeed while enforcement is on, so the monitor can
+                        // only ever observe the already enforced value.
+                        noteAppliedSpeed(value);
                     }
                 }
                 else {
@@ -148,6 +158,13 @@
             }
             else {
                 originalDescriptor.set.call(this, value);
+                // Page-driven speeds applied without enforcement are still observed speeds
+                // (F6 criterion 3, C3): note them so the toggle always has somewhere to go.
+                // The tagName guard keeps audio elements out; the finiteness guard keeps a
+                // hostile or buggy NaN from being remembered and later fed to setSpeed.
+                if (this.tagName === 'VIDEO' && Number.isFinite(value)) {
+                    noteAppliedSpeed(value);
+                }
             }
         },
         configurable: true
@@ -250,6 +267,13 @@
         }
     }
     window.setSpeed = function (speed) {
+        // One drift enforcer at a time: cancel the previous interval first, so a
+        // rapid toggle never leaves an old enforcer pushing the prior speed against
+        // the new one for the rest of its 20 ticks.
+        if (driftEnforcer !== null) {
+            clearInterval(driftEnforcer);
+            driftEnforcer = null;
+        }
         const requestedSpeed = speed;
         speed = Math.min(4, Math.max(0.25, speed));
         if (requestedSpeed !== speed) {
@@ -258,6 +282,7 @@
         console.log(`[Echo360 Speed Control] setSpeed called: ${speed.toFixed(2)}x (previous target: ${targetSpeed.toFixed(2)}x)`);
         targetSpeed = speed;
         enforceSpeed = true;
+        noteAppliedSpeed(speed);
         showSpeedOverlay(speed);
         updateSpeedButton(speed);
         const videos = document.querySelectorAll('video');
@@ -282,9 +307,15 @@
                 }
             });
             count++;
-            if (count > 20)
+            if (count > 20) {
                 clearInterval(enforcer);
+                // Only release the module handle if it still points at this interval;
+                // a newer setSpeed may have replaced it already.
+                if (driftEnforcer === enforcer)
+                    driftEnforcer = null;
+            }
         }, 250);
+        driftEnforcer = enforcer;
         console.log(`[Echo360 Speed Control] Speed successfully set to ${speed.toFixed(2)}x`);
         return `Speed set to ${speed}x`;
     };
@@ -293,6 +324,32 @@
         targetSpeed = 1.0;
         return 'Speed control released';
     };
+    function noteAppliedSpeed(s) {
+        // Only speeds in the applicable range are remembered. Out-of-range values
+        // (a page-driven 0 used as an alternate pause, or anything above 4) are
+        // rejected rather than clamped, so the last good speed survives and the
+        // restore overlay never announces a value setSpeed would not apply.
+        if (s !== 1 && s >= 0.25 && s <= 4)
+            previousStudySpeed = s;
+    }
+    function toggleStudySpeed() {
+        const video = document.querySelector('video');
+        if (!video)
+            return;
+        const current = video.playbackRate;
+        if (current !== 1) {
+            // Capture before setSpeed(1) runs; the capture-first ordering is the contract (D6).
+            const remembered = current;
+            window.setSpeed(1);
+            previousStudySpeed = remembered;
+            showSpeedOverlay(1, 'Switched to 1x');
+        }
+        else if (previousStudySpeed !== null) {
+            window.setSpeed(previousStudySpeed);
+            showSpeedOverlay(previousStudySpeed, `Returned to ${previousStudySpeed.toFixed(2)}x`);
+        }
+        // At 1x with nothing remembered: silent no-op by design (D6), deliberately unlogged.
+    }
     function addCustomSpeedOptions(retryCount = 0) {
         const menu = document.querySelector('#playback-speed-menu ul[role="menu"]');
         if (!menu) {
@@ -356,7 +413,7 @@
             el.style.cssText = KEY_CSS;
             return el;
         };
-        const makeRow = (emoji, secondKey) => {
+        const makeRow = (emoji, secondKey, trailingLabel) => {
             const row = document.createElement('div');
             row.style.cssText = `
         display: flex;
@@ -368,6 +425,9 @@
             row.appendChild(makeKey('Shift'));
             row.appendChild(document.createTextNode('+'));
             row.appendChild(makeKey(secondKey));
+            if (trailingLabel) {
+                row.appendChild(document.createTextNode(trailingLabel));
+            }
             return row;
         };
         const hintLabel = document.createElement('div');
@@ -376,6 +436,7 @@
         hintItem.appendChild(hintLabel);
         hintItem.appendChild(makeRow('🐌', '<'));
         hintItem.appendChild(makeRow('⚡', '>'));
+        hintItem.appendChild(makeRow('🔁', 'R', 'Toggle 1x / previous speed'));
         menu.appendChild(hintItem);
         const allSpeeds = [4, 3.75, 3.5, 3.25, 3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1, 0.75, 0.5, 0.25];
         allSpeeds.forEach(speed => {
@@ -684,6 +745,11 @@
                 window.setSpeed(newSpeed);
             }
         }
+        else if (event.shiftKey && (event.key === 'R' || event.key === 'r')) {
+            // Shift+r yields key 'R' with shiftKey true on most layouts; match both cases.
+            event.preventDefault();
+            toggleStudySpeed();
+        }
     }
     document.addEventListener('keydown', handleKeyboardShortcuts);
     let speedMonitor = null;
@@ -757,6 +823,9 @@
         else if (event.data.type === 'SET_HIDE_SLOW_SPEEDS') {
             hideSlowSpeeds = event.data.hideSlowSpeeds === true;
             applySlowSpeedFilter();
+        }
+        else if (event.data.type === 'TOGGLE_STUDY_SPEED') {
+            toggleStudySpeed();
         }
     });
     injectEtaSpan();
