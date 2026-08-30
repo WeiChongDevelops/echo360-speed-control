@@ -10,6 +10,8 @@
     hideSlowSpeeds?: boolean;
     duration?: number;
     currentTime?: number;
+    paused?: boolean;
+    seeking?: boolean;
     requestId?: string;
   }
 
@@ -27,17 +29,18 @@
     return `${h}h ${m}m left`;
   }
 
-  function renderEtaInto(el: HTMLElement, seconds: number | null, kind: DurationKind, speed: number): void {
+  function renderEtaInto(el: HTMLElement, seconds: number | null, kind: DurationKind, speed: number, paused: boolean): void {
     el.textContent = ''; // clear prior children
     if (seconds === null) return;
     if (kind !== 'finite') return;
     if (!Number.isFinite(seconds) || seconds <= 0) return;
-    el.appendChild(document.createTextNode(`${etaMainPart(seconds)} @ `));
+    const prefix = paused ? 'Paused, ' : '';
+    el.appendChild(document.createTextNode(`${prefix}${etaMainPart(seconds)} @ `));
     const strong = document.createElement('strong');
     strong.style.fontWeight = '700';
     strong.textContent = formatSpeed(speed);
     el.appendChild(strong);
-    if (speed > 1) {
+    if (!paused && speed > 1) {
       el.appendChild(document.createTextNode(' ⚡'));
     }
   }
@@ -99,15 +102,23 @@
     }
     const kind = classifyDuration(video.duration);
     if (kind !== 'finite') {
-      renderEtaInto(etaSpan, null, kind, video.playbackRate); // PRD/F4-1, F4-2
+      renderEtaInto(etaSpan, null, kind, video.playbackRate, video.paused); // PRD/F4-1, F4-2
       return;
     }
     if (video.currentTime >= video.duration) {
-      renderEtaInto(etaSpan, null, 'finite', video.playbackRate); // PRD/F4-3 (ended)
+      renderEtaInto(etaSpan, null, 'finite', video.playbackRate, video.paused); // PRD/F4-3 (ended)
       return;
     }
     const remaining = (video.duration - video.currentTime) / video.playbackRate;
-    renderEtaInto(etaSpan, remaining, 'finite', video.playbackRate);
+    renderEtaInto(etaSpan, remaining, 'finite', video.playbackRate, video.paused);
+    // Finish clock lives with the injected caller only, never inside the shared
+    // helper, so the popup structurally cannot grow one. Recomputed every tick,
+    // which keeps it fresh within one tick of any speed change or seek.
+    if (!video.paused && Number.isFinite(remaining) && remaining > 0) {
+      const finish = new Date(Date.now() + remaining * 1000);
+      const clock = finish.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      etaSpan.appendChild(document.createTextNode(` · finishes at ${clock}`));
+    }
   }
 
   function startEtaTicker(): void {
@@ -186,14 +197,14 @@
     return overlay;
   }
 
-  function showSpeedOverlay(speed: number, retryCount = 0): void {
+  function showSpeedOverlay(speed: number, phrase?: string, retryCount = 0): void {
     if (!speedOverlay) {
       speedOverlay = createOverlayElement();
       if (!speedOverlay) {
         // Body not ready, retry with exponential backoff (max 5 retries)
         if (retryCount < 5) {
           const delay = 100 * Math.pow(2, retryCount);
-          setTimeout(() => showSpeedOverlay(speed, retryCount + 1), delay);
+          setTimeout(() => showSpeedOverlay(speed, phrase, retryCount + 1), delay);
           return;
         }
         console.error('[Echo360 Speed Control] Could not create overlay after retries, document.body still not available');
@@ -201,7 +212,16 @@
       }
     }
 
-    speedOverlay.textContent = `${speed.toFixed(2)}x`;
+    // One overlay grammar (ADR-9): `<speed phrase>, <remaining at the new speed>`,
+    // with the remaining half omitted for no-video, non-finite, or ended cases.
+    const head = phrase ?? `${speed.toFixed(2)}x`;
+    const video = document.querySelector<HTMLVideoElement>('video');
+    let text = head;
+    if (video && classifyDuration(video.duration) === 'finite' && !video.ended) {
+      const remaining = (video.duration - video.currentTime) / speed;
+      if (remaining > 0) text = `${head}, ${etaMainPart(remaining)}`;
+    }
+    speedOverlay.textContent = text;
     speedOverlay.style.opacity = '1';
 
     if (overlayTimeout) {
@@ -779,12 +799,13 @@
       const currentSpeed = video ? video.playbackRate : 1;
       const rawDuration = video ? video.duration : NaN;
       const rawCurrentTime = video ? video.currentTime : 0;
-      console.log(`[Echo360 Speed Control] Message received GET_ECHO_SPEED: responding with ${currentSpeed.toFixed(2)}x`);
       window.postMessage({
         type: 'CURRENT_ECHO_SPEED',
         speed: currentSpeed,
         duration: rawDuration,
         currentTime: rawCurrentTime,
+        paused: video ? video.paused : false,
+        seeking: video ? video.seeking : false,
         requestId: event.data.requestId
       } as SpeedMessage, '*');
     } else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {

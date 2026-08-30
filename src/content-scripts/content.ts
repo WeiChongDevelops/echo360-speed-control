@@ -10,6 +10,8 @@
     hideSlowSpeeds?: boolean;
     duration?: number;
     currentTime?: number;
+    paused?: boolean;
+    seeking?: boolean;
     requestId?: string;
   }
 
@@ -28,6 +30,9 @@
     duration?: number;
     currentTime?: number;
     failureKind?: 'injected_timeout';
+    paused?: boolean;
+    seeking?: boolean;
+    snapshot?: null;
   }
 
   // Correlates each GET_ECHO_SPEED round trip with its CURRENT_ECHO_SPEED reply.
@@ -170,6 +175,55 @@
           responded = true;
           console.warn(`[Echo360 Speed Control] getSpeed ${requestId} got no CURRENT_ECHO_SPEED reply within 1 s; reporting injected_timeout instead of a fake no-video answer.`);
           sendResponse({ connected: true, failureKind: 'injected_timeout' } as SpeedResponse);
+        }
+      }, 1000);
+
+      return true;
+    } else if (request.action === 'getSnapshot') {
+      // Side-effect-free playback snapshot for the popup's ETA poller (ADR-2).
+      // Mirrors the getSpeed round trip mechanics but never touches detection
+      // state or stored speed; a bridge timeout answers { snapshot: null }.
+      const requestId = `sn_${++requestSeq}`;
+      let responded = false;
+      const listener = (event: MessageEvent) => {
+        if (event.source !== window || event.data.type !== 'CURRENT_ECHO_SPEED') return;
+        if (event.data.requestId !== requestId) return;
+        window.removeEventListener('message', listener);
+        // The correlated reply owns the response from here, even when the
+        // no-video path delays it past the 1 s mark; cancel the bridge timer now.
+        clearTimeout(timer);
+        const hasVideo = document.querySelector('video') !== null;
+        const rawDuration: number = typeof event.data.duration === 'number' ? event.data.duration : NaN;
+        const rawCurrentTime: number = typeof event.data.currentTime === 'number' ? event.data.currentTime : 0;
+        const durationKind: 'finite' | 'live' | 'unknown' =
+          Number.isNaN(rawDuration) ? 'unknown'
+            : !Number.isFinite(rawDuration) ? 'live'
+            : 'finite';
+        const reply = () => {
+          if (responded) return;
+          responded = true;
+          clearTimeout(timer);
+          sendResponse({
+            speed: event.data.speed,
+            durationKind,
+            duration: durationKind === 'finite' ? rawDuration : 0,
+            currentTime: rawCurrentTime,
+            paused: event.data.paused === true,
+            seeking: event.data.seeking === true
+          } as SpeedResponse);
+        };
+        // No-video frames wait 900 ms so a video frame elsewhere can win the callback race (ADR-6).
+        if (hasVideo) reply();
+        else setTimeout(reply, 900);
+      };
+      window.addEventListener('message', listener);
+      window.postMessage({ type: 'GET_ECHO_SPEED', requestId } as SpeedMessage, '*');
+      const timer = setTimeout(() => {
+        window.removeEventListener('message', listener);
+        if (!responded) {
+          responded = true;
+          console.warn(`[Echo360 Speed Control] getSnapshot ${requestId} got no CURRENT_ECHO_SPEED reply within 1 s; answering with a null snapshot so the popup keeps its last values.`);
+          sendResponse({ snapshot: null } as SpeedResponse);
         }
       }, 1000);
 

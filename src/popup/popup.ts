@@ -24,6 +24,9 @@
     duration?: number;
     currentTime?: number;
     failureKind?: 'injected_timeout';
+    paused?: boolean;
+    seeking?: boolean;
+    snapshot?: null;
   }
 
   type DetectionResult =
@@ -53,17 +56,18 @@
     return `${h}h ${m}m left`;
   }
 
-  function renderEtaInto(el: HTMLElement, seconds: number | null, kind: DurationKind, speed: number): void {
+  function renderEtaInto(el: HTMLElement, seconds: number | null, kind: DurationKind, speed: number, paused: boolean): void {
     el.textContent = ''; // clear prior children
     if (seconds === null) return;
     if (kind !== 'finite') return;
     if (!Number.isFinite(seconds) || seconds <= 0) return;
-    el.appendChild(document.createTextNode(`${etaMainPart(seconds)} @ `));
+    const prefix = paused ? 'Paused, ' : '';
+    el.appendChild(document.createTextNode(`${prefix}${etaMainPart(seconds)} @ `));
     const strong = document.createElement('strong');
     strong.style.fontWeight = '700';
     strong.textContent = formatSpeed(speed);
     el.appendChild(strong);
-    if (speed > 1) {
+    if (!paused && speed > 1) {
       el.appendChild(document.createTextNode(' ⚡'));
     }
   }
@@ -106,7 +110,14 @@
   let cachedCurrentTime = 0;
   let cachedSpeed = 1;
   let cachedDurationKind: EtaDurationKind = 'absent';
+  let cachedPaused = false;
   let etaTickHandle: ReturnType<typeof setInterval> | undefined;
+  // Serial poller discipline (ADR-2): at most one getSnapshot in flight.
+  let etaPollInFlight = false;
+  // Snapshot staleness guard, same pattern as detectionAttemptId: a poll
+  // captures the generation at send and its response is discarded if any
+  // user speed action, incoming updateSpeed, or ETA stop moved it on.
+  let etaGeneration = 0;
 
   const ETA_VISIBLE_STATES: StatusState[] = ['connected_idle', 'connected_speed_set'];
 
@@ -118,6 +129,7 @@
       if (typeof response.speed === 'number') {
         cachedSpeed = response.speed;
       }
+      cachedPaused = response.paused === true;
     } else {
       cachedDurationKind = 'absent';
     }
@@ -133,18 +145,63 @@
     if (!etaEl) return;
     const remaining = etaCompute();
     const kindForFormat: DurationKind = cachedDurationKind === 'absent' ? 'unknown' : cachedDurationKind;
-    renderEtaInto(etaEl, remaining, kindForFormat, cachedSpeed);
+    renderEtaInto(etaEl, remaining, kindForFormat, cachedSpeed, cachedPaused);
+  }
+
+  // Drift fix (F4): every tick pulls a fresh playback snapshot instead of
+  // advancing a fake clock, so pauses freeze the countdown and seeks show
+  // the fresh value on the next poll. Serial by design: a tick that finds a
+  // request still in flight does nothing. Null snapshots keep the last
+  // rendered values and never mark an error (detection owns errors).
+  // NEVER route this through getCurrentSpeed/renderDetection/loadSpeedForDomain;
+  // that path re-applies the stored speed, which is the bug this replaces.
+  function etaPollSnapshot(): void {
+    if (etaPollInFlight) return;
+    if (!ETA_VISIBLE_STATES.includes(currentStatusState)) return;
+    etaPollInFlight = true;
+    const generationAtSend = etaGeneration;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) {
+        etaPollInFlight = false;
+        return;
+      }
+      chrome.tabs.sendMessage(tabs[0].id!, { action: 'getSnapshot' }, (response: SpeedResponse) => {
+        etaPollInFlight = false;
+        // Discard snapshots from a superseded generation: a newer speed was
+        // committed (or the ETA epoch ended) while this one was in flight,
+        // and applying it would roll cachedSpeed back until the next poll.
+        if (generationAtSend !== etaGeneration) {
+          return;
+        }
+        // Re-check the gate at landing time: detection may have flipped to an
+        // error state during the round trip, and a late snapshot must not
+        // repaint a stale ETA under an error status.
+        if (!ETA_VISIBLE_STATES.includes(currentStatusState)) {
+          return;
+        }
+        if (chrome.runtime.lastError || !response || response.snapshot === null) {
+          return;
+        }
+        etaUpdateFromResponse(response);
+        etaRender();
+      });
+    });
   }
 
   function etaStartTicking(): void {
     if (etaTickHandle !== undefined) return;
+    // Immediate first poll so a popup opened on a paused video shows the
+    // paused form now rather than after the first interval tick.
+    etaPollSnapshot();
     etaTickHandle = setInterval(() => {
-      cachedCurrentTime += cachedSpeed;
-      etaRender();
+      etaPollSnapshot();
     }, 1000);
   }
 
   function etaStopTicking(): void {
+    // Close the ETA epoch: a snapshot still in flight from before this stop
+    // must not apply after a reconnect.
+    etaGeneration++;
     if (etaTickHandle !== undefined) {
       clearInterval(etaTickHandle);
       etaTickHandle = undefined;
@@ -360,6 +417,8 @@
       if (request.action === 'updateSpeed') {
         // A page-driven change supersedes a pending restore too.
         clearRestoreSpeedTimer();
+        // And supersedes any snapshot still in flight (staleness guard).
+        etaGeneration++;
         // Update the UI with the new speed
         currentSpeedEl.textContent = `${request.speed!.toFixed(2)}x`;
         speedSlider.value = request.speed!.toString();
@@ -511,6 +570,8 @@
     // Any speed send supersedes a pending restore (harmless no-op when the
     // caller is the restore itself, since its timer has already fired).
     clearRestoreSpeedTimer();
+    // And supersedes any snapshot still in flight (staleness guard).
+    etaGeneration++;
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         chrome.tabs.sendMessage(tabs[0].id!, {
