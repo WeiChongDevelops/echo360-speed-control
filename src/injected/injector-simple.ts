@@ -10,6 +10,7 @@
     hideSlowSpeeds?: boolean;
     duration?: number;
     currentTime?: number;
+    requestId?: string;
   }
 
   type DurationKind = 'finite' | 'live' | 'unknown';
@@ -254,7 +255,11 @@
   }
 
   (window as any).setSpeed = function(speed: number): string {
+    const requestedSpeed = speed;
     speed = Math.min(4, Math.max(0.25, speed));
+    if (requestedSpeed !== speed) {
+      console.log(`[Echo360 Speed Control] Clamped requested ${requestedSpeed}x to ${speed}x (allowed range 0.25 to 4).`);
+    }
     console.log(`[Echo360 Speed Control] setSpeed called: ${speed.toFixed(2)}x (previous target: ${targetSpeed.toFixed(2)}x)`);
 
     targetSpeed = speed;
@@ -426,7 +431,7 @@
 
       // C2: announce >2x speeds explicitly to AT and as tooltip
       if (speed > 2) {
-        newOption.setAttribute('aria-label', `${speed}x — above Echo360's native cap`);
+        newOption.setAttribute('aria-label', `${speed}x, above Echo360's native cap`);
         newOption.setAttribute('title', 'Speed above Echo360 native cap');
       }
 
@@ -779,7 +784,8 @@
         type: 'CURRENT_ECHO_SPEED',
         speed: currentSpeed,
         duration: rawDuration,
-        currentTime: rawCurrentTime
+        currentTime: rawCurrentTime,
+        requestId: event.data.requestId
       } as SpeedMessage, '*');
     } else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {
       console.log(`[Echo360 Speed Control] Message received SET_SHORTCUTS_ENABLED: ${event.data.enabled}`);

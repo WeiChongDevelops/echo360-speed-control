@@ -23,11 +23,13 @@
     durationKind?: 'finite' | 'live' | 'unknown';
     duration?: number;
     currentTime?: number;
+    failureKind?: 'injected_timeout';
   }
 
   type DetectionResult =
     | { kind: 'connected_with_video'; speed: number }
     | { kind: 'connected_no_video' }
+    | { kind: 'transient_timeout' }
     | { kind: 'not_connected' }
     | { kind: 'invalid_page' };
 
@@ -82,6 +84,21 @@
   let currentStatusState: StatusState = 'detecting';
   let lastStatusPayload: StatusPayload = {};
   let statusRevertTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Detection attempt correlation (F3): one auto retry per attempt, stale callbacks discarded.
+  let detectionAttemptId = 0;
+  let autoRetryUsedForAttempt = false;
+
+  // Handle for renderDetection's delayed loadSpeedForDomain restore; cleared by any
+  // user speed action or incoming updateSpeed so a fresh choice is never overwritten.
+  let restoreSpeedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearRestoreSpeedTimer(): void {
+    if (restoreSpeedTimer !== undefined) {
+      clearTimeout(restoreSpeedTimer);
+      restoreSpeedTimer = undefined;
+    }
+  }
 
   // EtaState (popup-local; not persisted) per SDD § Application Data Models.
   type EtaDurationKind = DurationKind | 'absent';
@@ -221,7 +238,7 @@
         className = 'status error detailed-error';
         break;
       case 'transient_error':
-        text = 'Connection hiccup. Try again.';
+        text = 'Connection hiccup. Retrying…';
         className = 'status error';
         break;
       case 'persistent_error':
@@ -239,6 +256,8 @@
 
     const errorStates: StatusState[] = ['no_video', 'transient_error', 'persistent_error', 'invalid_page'];
     retryButton.classList.toggle('hidden', !errorStates.includes(currentStatusState));
+    // One shared button; label reassigned on every render per state.
+    retryButton.textContent = currentStatusState === 'transient_error' ? 'Retry now' : '↻ Retry';
     reportLink.classList.toggle('hidden', currentStatusState !== 'persistent_error');
 
     // Gate eta visibility on FSM state (EARS-F2-4). Tick start/stop is controlled here;
@@ -339,6 +358,8 @@
   function listenForSpeedChanges(): void {
     chrome.runtime.onMessage.addListener((request: RuntimeMessage, sender, sendResponse) => {
       if (request.action === 'updateSpeed') {
+        // A page-driven change supersedes a pending restore too.
+        clearRestoreSpeedTimer();
         // Update the UI with the new speed
         currentSpeedEl.textContent = `${request.speed!.toFixed(2)}x`;
         speedSlider.value = request.speed!.toString();
@@ -364,13 +385,18 @@
   function classifyDetection(
     url: string | undefined,
     runtimeError: chrome.runtime.LastError | undefined,
-    response: { connected?: boolean; hasVideo?: boolean; speed?: number } | undefined
+    response: { connected?: boolean; hasVideo?: boolean; speed?: number; failureKind?: 'injected_timeout' } | undefined
   ): DetectionResult {
     if (!url || !url.includes('echo360')) {
       return { kind: 'invalid_page' };
     }
     if (runtimeError || !response) {
       return { kind: 'not_connected' };
+    }
+    // Bridge timeout is checked before the no-video branch: a missed reply is a
+    // hiccup to retry, never a fake "no video" verdict (F3).
+    if (response.failureKind === 'injected_timeout') {
+      return { kind: 'transient_timeout' };
     }
     if (response.hasVideo === false) {
       return { kind: 'connected_no_video' };
@@ -395,12 +421,29 @@
         // aria-label after etaUpdateFromResponse below (in getCurrentSpeed
         // callback) to ensure the suffix reflects the freshly-cached eta.
         applyCurrentSpeedAria(result.speed);
-        setTimeout(() => loadSpeedForDomain(), 100);
+        clearRestoreSpeedTimer();
+        restoreSpeedTimer = setTimeout(() => {
+          restoreSpeedTimer = undefined;
+          loadSpeedForDomain();
+        }, 100);
         return;
       case 'connected_no_video':
         currentSpeedEl.textContent = 'N/A';
         resetCurrentSpeedAria();
         setStatusState('no_video');
+        return;
+      case 'transient_timeout':
+        if (!autoRetryUsedForAttempt) {
+          autoRetryUsedForAttempt = true;
+          setStatusState('transient_error');
+          console.warn('[Echo360 Speed Control] Bridge timeout on getSpeed; retrying once automatically for this detection attempt.');
+          getCurrentSpeed();
+        } else {
+          console.warn('[Echo360 Speed Control] Bridge timeout persisted after the automatic retry; showing persistent error.');
+          currentSpeedEl.textContent = 'N/A';
+          resetCurrentSpeedAria();
+          setStatusState('persistent_error');
+        }
         return;
       case 'not_connected':
         currentSpeedEl.textContent = 'N/A';
@@ -416,6 +459,9 @@
   }
 
   function getCurrentSpeed(): void {
+    // Capture before the async tab query: a manual retry that lands while the
+    // query is pending must supersede this request, not be adopted by it.
+    const attemptId = detectionAttemptId;
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         try {
@@ -426,6 +472,10 @@
         }
 
         chrome.tabs.sendMessage(tabs[0].id!, { action: 'getSpeed' }, (response: SpeedResponse) => {
+          if (attemptId !== detectionAttemptId) {
+            console.warn(`[Echo360 Speed Control] Discarding getSpeed result from superseded detection attempt ${attemptId} (current attempt ${detectionAttemptId}).`);
+            return;
+          }
           const result = classifyDetection(tabs[0].url, chrome.runtime.lastError, response);
           renderDetection(result);
 
@@ -458,6 +508,9 @@
   }
 
   function setSpeed(speed: number, shouldSave = true, shouldAnnounce = true): void {
+    // Any speed send supersedes a pending restore (harmless no-op when the
+    // caller is the restore itself, since its timer has already fired).
+    clearRestoreSpeedTimer();
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
         chrome.tabs.sendMessage(tabs[0].id!, {
@@ -518,6 +571,9 @@
   });
 
   retryButton.addEventListener('click', () => {
+    // Manual retry starts a fresh detection attempt with a fresh auto-retry budget.
+    detectionAttemptId++;
+    autoRetryUsedForAttempt = false;
     setStatusState('detecting');
     getCurrentSpeed();
   });

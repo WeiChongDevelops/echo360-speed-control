@@ -231,7 +231,11 @@
         }
     }
     window.setSpeed = function (speed) {
+        const requestedSpeed = speed;
         speed = Math.min(4, Math.max(0.25, speed));
+        if (requestedSpeed !== speed) {
+            console.log(`[Echo360 Speed Control] Clamped requested ${requestedSpeed}x to ${speed}x (allowed range 0.25 to 4).`);
+        }
         console.log(`[Echo360 Speed Control] setSpeed called: ${speed.toFixed(2)}x (previous target: ${targetSpeed.toFixed(2)}x)`);
         targetSpeed = speed;
         enforceSpeed = true;
@@ -381,7 +385,7 @@
             }
             // C2: announce >2x speeds explicitly to AT and as tooltip
             if (speed > 2) {
-                newOption.setAttribute('aria-label', `${speed}x — above Echo360's native cap`);
+                newOption.setAttribute('aria-label', `${speed}x, above Echo360's native cap`);
                 newOption.setAttribute('title', 'Speed above Echo360 native cap');
             }
             newOption.addEventListener('click', function (e) {
@@ -711,7 +715,8 @@
                 type: 'CURRENT_ECHO_SPEED',
                 speed: currentSpeed,
                 duration: rawDuration,
-                currentTime: rawCurrentTime
+                currentTime: rawCurrentTime,
+                requestId: event.data.requestId
             }, '*');
         }
         else if (event.data.type === 'SET_SHORTCUTS_ENABLED') {

@@ -89,7 +89,11 @@
         });
     }
     function forceSetSpeed(speed) {
+        const requestedSpeed = speed;
         speed = Math.min(4, Math.max(0.25, speed));
+        if (requestedSpeed !== speed) {
+            console.log(`[Echo360 Speed Control] Clamped requested ${requestedSpeed}x to ${speed}x (allowed range 0.25 to 4).`);
+        }
         targetSpeed = speed;
         showSpeedOverlay(speed);
         updateSpeedButton(speed);
