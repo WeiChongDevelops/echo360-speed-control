@@ -83,6 +83,7 @@
   const shortcutsToggle = document.getElementById('shortcutsToggle') as HTMLInputElement;
   const shortcutsDisclosure = document.querySelector('.shortcuts-disclosure')!;
   const etaEl = document.getElementById('eta') as HTMLDivElement | null;
+  const timeSavedEl = document.getElementById('timeSaved') as HTMLDivElement | null;
 
   let currentDomain = '';
   let currentStatusState: StatusState = 'detecting';
@@ -248,10 +249,57 @@
     currentSpeedEl.setAttribute('aria-label', 'Current playback speed');
   }
 
+  // Shared format rule (ADR-8): floor-based, Nm from 60 s, Nh Nm from 3600 s.
+  // Below 60 s both surfaces are hidden; the function still answers 0m defensively.
+  function formatTimeSaved(totalSeconds: number): string {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    if (h >= 1) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  // Last rendered total; the counter is monotonic (business rule 5), so a lower
+  // incoming value is a stale initial read arriving after a fresher onChanged.
+  let renderedTimeSavedSeconds = 0;
+
+  function renderTimeSavedLine(totalSeconds: number): void {
+    if (!timeSavedEl) return;
+    if (Number.isFinite(totalSeconds) && totalSeconds < renderedTimeSavedSeconds) {
+      return; // stale lower total; keep the newer rendered value
+    }
+    renderedTimeSavedSeconds = Number.isFinite(totalSeconds) ? totalSeconds : renderedTimeSavedSeconds;
+    if (!Number.isFinite(totalSeconds) || totalSeconds < 60) {
+      timeSavedEl.hidden = true;
+      return;
+    }
+    timeSavedEl.textContent = '';
+    timeSavedEl.appendChild(document.createTextNode('Time saved: '));
+    const value = document.createElement('span');
+    value.className = 'time-saved-value';
+    value.textContent = formatTimeSaved(totalSeconds);
+    timeSavedEl.appendChild(value);
+    timeSavedEl.hidden = false;
+  }
+
+  function initTimeSaved(): void {
+    // Subscribed BEFORE the initial read so a write landing between the two is
+    // never missed (SDD gotcha: subscribe-before-read everywhere).
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local' || !('totalTimeSavedSeconds' in changes)) return;
+      const totalSeconds = changes.totalTimeSavedSeconds.newValue;
+      if (typeof totalSeconds === 'number') renderTimeSavedLine(totalSeconds);
+    });
+    chrome.storage.local.get('totalTimeSavedSeconds', (result) => {
+      const totalSeconds = result.totalTimeSavedSeconds;
+      if (typeof totalSeconds === 'number') renderTimeSavedLine(totalSeconds);
+    });
+  }
+
   setStatusState('detecting');
   initTheme();
   initShortcuts();
   initPresetVisibility();
+  initTimeSaved();
   getCurrentSpeed();
   listenForSpeedChanges();
 

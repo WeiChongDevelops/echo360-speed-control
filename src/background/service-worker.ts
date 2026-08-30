@@ -6,7 +6,14 @@ interface RuntimeMessage {
   action: string;
   speed?: number;
   tabId?: number;
+  savedSecondsDelta?: number;
+  claimedWallSeconds?: number;
 }
+
+// Serializes time-saved aggregation so interleaved read-modify-writes never
+// lose an update (ADR-4). Reset on SW restart is harmless: a fresh instance
+// simply starts an empty chain.
+let aggregationChain: Promise<void> = Promise.resolve();
 
 // M6: Migrate legacy speed_<hostname> keys to canonical speed_echo360.
 // Runs on both 'install' and 'update' to be idempotent.
@@ -64,5 +71,43 @@ chrome.runtime.onMessage.addListener((request: RuntimeMessage, sender, sendRespo
       speed: request.speed,
       tabId: sender.tab?.id
     });
+  }
+  if (request.action === 'timeSavedDelta') {
+    const tabId = sender.tab?.id;
+    const frameId = sender.frameId;
+    aggregationChain = aggregationChain.then(async () => {
+      if (tabId === undefined || frameId === undefined) {
+        console.warn('[Echo360 Speed Control] Dropped time-saved delta without tab or frame metadata; sender is not a content script.');
+        return;
+      }
+      const delta = request.savedSecondsDelta;
+      if (typeof delta !== 'number' || !Number.isFinite(delta) || delta <= 0) {
+        // The SW is the sole writer of totalTimeSavedSeconds; a NaN write would
+        // poison the total permanently (there is no reset UI).
+        console.warn(`[Echo360 Speed Control] Dropped time-saved delta with invalid savedSecondsDelta: ${String(delta)}.`);
+        return;
+      }
+      const key = `timeSavedSource_${tabId}`;
+      const sess = await chrome.storage.session.get(key);
+      const src = sess[key] as { frameId: number; lastAcceptedAt: number } | undefined;
+      const now = Date.now();
+      if (src && src.frameId !== frameId && now - src.lastAcceptedAt < 30000) {
+        // D4: one accepted producer per tab; takeover only after 30 s of silence.
+        console.warn(`[Echo360 Speed Control] Rejected time-saved delta from tab ${tabId} frame ${frameId}: frame ${src.frameId} is the active source.`);
+        return;
+      }
+      const cur = await chrome.storage.local.get('totalTimeSavedSeconds');
+      const total = (typeof cur.totalTimeSavedSeconds === 'number' ? cur.totalTimeSavedSeconds : 0)
+                    + delta;
+      await chrome.storage.local.set({ totalTimeSavedSeconds: total });
+      // Arbitration commits only AFTER the total write succeeds, so a failed
+      // aggregation never locks a healthy frame out for 30 s.
+      await chrome.storage.session.set({ [key]: { frameId, lastAcceptedAt: now } });
+    }).catch(err => {
+      // Catch keeps the chain alive for the next delta.
+      console.warn('[Echo360 Speed Control] Time-saved aggregation failed:', err);
+    });
+    aggregationChain.finally(() => sendResponse({ ok: true }));
+    return true; // async sendResponse (QUAL-001)
   }
 });

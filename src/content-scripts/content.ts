@@ -13,6 +13,9 @@
     paused?: boolean;
     seeking?: boolean;
     requestId?: string;
+    savedSecondsDelta?: number;
+    sampledWallSeconds?: number;
+    totalSeconds?: number;
   }
 
   interface ChromeMessage {
@@ -38,12 +41,39 @@
   // Correlates each GET_ECHO_SPEED round trip with its CURRENT_ECHO_SPEED reply.
   let requestSeq = 0;
 
+  // Independent wall clock for time-saved delta validation (M1): the injected
+  // script's claimed wall time rides the same hostile postMessage channel, so
+  // content tracks its own time between accepted batches.
+  let lastAcceptedBatchAtMs = Date.now();
+
   function getDomainKey(): string {
     return 'speed_echo360';
   }
 
   const isEcho360 = window.location.hostname.includes('echo360');
   const scriptName = isEcho360 ? 'injected/injector-simple.js' : 'injected/injector.js';
+
+  // Time-saved stat bridge (ADR-5). Subscribed here at script load, BEFORE the
+  // initial storage.local read inside the onload handshake below, so a write
+  // landing between the two is never missed.
+  let onChangedHopLogged = false;
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !('totalTimeSavedSeconds' in changes)) return;
+    if (!onChangedHopLogged) {
+      onChangedHopLogged = true;
+      // The SDD labels this hop unconfirmed; this one-time log verifies it during unpacked testing.
+      console.log('[Echo360 Speed Control] storage.onChanged fired in the content script; the stat bridge hop works.');
+    }
+    const totalSeconds = changes.totalTimeSavedSeconds.newValue;
+    if (typeof totalSeconds === 'number' && Number.isFinite(totalSeconds)) {
+      window.postMessage({
+        type: 'SET_TIME_SAVED_TOTAL',
+        totalSeconds
+      } as SpeedMessage, '*');
+    } else {
+      console.warn(`[Echo360 Speed Control] Ignored totalTimeSavedSeconds change with non-numeric value: ${String(totalSeconds)}.`);
+    }
+  });
 
   const script = document.createElement('script');
   script.src = chrome.runtime.getURL(scriptName);
@@ -85,6 +115,19 @@
         type: 'SET_ASSET_URLS',
         ...assetUrls
       } as SpeedMessage, '*');
+
+      // Initial stat hydration rides this same handshake so the page listener
+      // is guaranteed to exist (gotcha: never post beside script injection).
+      // The onChanged subscription above was registered before this read.
+      chrome.storage.local.get('totalTimeSavedSeconds', (localResult) => {
+        const totalSeconds = localResult.totalTimeSavedSeconds;
+        if (typeof totalSeconds === 'number' && Number.isFinite(totalSeconds)) {
+          window.postMessage({
+            type: 'SET_TIME_SAVED_TOTAL',
+            totalSeconds
+          } as SpeedMessage, '*');
+        }
+      });
     });
   };
   script.onerror = function() {
@@ -119,6 +162,38 @@
       });
     } else if (event.data.type === 'HIDE_SLOW_SPEEDS_CHANGED') {
       chrome.storage.sync.set({ hideSlowSpeeds: event.data.hideSlowSpeeds === true });
+    } else if (event.data.type === 'TIME_SAVED_DELTA') {
+      // Page-exposed channel: validate before forwarding (D3, M1).
+      const claimed = event.data.sampledWallSeconds;
+      const delta = event.data.savedSecondsDelta;
+      const observedWall = (Date.now() - lastAcceptedBatchAtMs) / 1000;
+      const bound = 3 * Math.min(claimed, observedWall) * 1.25;
+      let reason: string | null = null;
+      if (!Number.isFinite(delta)) reason = 'delta not finite';
+      else if (delta <= 0) reason = 'delta not positive';
+      else if (!Number.isFinite(claimed)) reason = 'claimed wall not finite';
+      else if (claimed <= 0) reason = 'claimed wall not positive';
+      // Accept cadence floor: legitimate batches flush every ~10 s, so anything
+      // arriving under 1 s of observed wall time since the last accepted batch
+      // is a hostile or buggy rapid-fire post; capping the accept rate keeps the
+      // service worker's serialized storage jobs at ~1/s worst case.
+      else if (observedWall < 1) reason = 'batch arrived under the 1 s accept interval';
+      else if (delta > bound) reason = 'delta exceeds the wall-time bound';
+      if (reason !== null) {
+        console.warn(`[Echo360 Speed Control] Rejected time-saved delta ${delta} (claimed wall ${claimed}s, observed ${observedWall.toFixed(1)}s, bound ${bound.toFixed(1)}s): ${reason}.`);
+        return;
+      }
+      lastAcceptedBatchAtMs = Date.now();
+      chrome.runtime.sendMessage({
+        action: 'timeSavedDelta',
+        savedSecondsDelta: delta,
+        claimedWallSeconds: claimed
+      }, () => {
+        // D11: read lastError so a dead-SW send never surfaces as unchecked noise.
+        if (chrome.runtime.lastError) {
+          console.warn(`[Echo360 Speed Control] Time-saved delta did not reach the service worker: ${chrome.runtime.lastError.message}. The batch is lost.`);
+        }
+      });
     }
   });
 

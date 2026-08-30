@@ -276,6 +276,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-top: 1px solid var(--border-secondary);
 }
 
+.time-saved-line {
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.time-saved-line .time-saved-value {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .kofi-button {
   display: inline-flex;
   align-items: center;

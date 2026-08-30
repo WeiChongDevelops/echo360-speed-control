@@ -119,8 +119,95 @@
                 injectEtaSpan();
             }
             updateEtaSpan();
+            sampleTimeSaved();
         }, 1000);
     }
+    // Time-saved sampler state (F5). Rides the existing 1 s ETA tick above; no new interval.
+    const sampler = {
+        lastMediaTime: 0,
+        lastWallMs: 0,
+        batchSaved: 0,
+        batchWallMs: 0,
+        videoRef: null
+    };
+    // Display cache for the stat surfaces (C4): survives Echo360 menu rebuilds.
+    let timeSavedTotalSeconds = 0;
+    function samplerSeekReset(event) {
+        // Log the discarded jump once per seek: only the 'seeking' arm logs, so the
+        // paired 'seeked' event never duplicates the line. Reset behavior unchanged.
+        if (event?.type === 'seeking' && sampler.videoRef) {
+            const from = sampler.lastMediaTime;
+            const to = sampler.videoRef.currentTime;
+            if (to !== from) {
+                console.warn(`[Echo360 Speed Control] Seek detected: media time ${from.toFixed(2)}s to ${to.toFixed(2)}s; segment discarded and baseline reset.`);
+            }
+        }
+        resetSamplerBaseline(sampler.videoRef, Date.now());
+    }
+    function resetSamplerBaseline(video, nowMs) {
+        if (video !== sampler.videoRef) {
+            // This function owns the seek-listener lifecycle: the 'seeking'/'seeked'
+            // listeners move with videoRef and are never attached at init time (the
+            // video may not exist yet and Echo360 can replace the element).
+            if (sampler.videoRef) {
+                sampler.videoRef.removeEventListener('seeking', samplerSeekReset);
+                sampler.videoRef.removeEventListener('seeked', samplerSeekReset);
+            }
+            if (video) {
+                video.addEventListener('seeking', samplerSeekReset);
+                video.addEventListener('seeked', samplerSeekReset);
+            }
+            sampler.videoRef = video;
+        }
+        sampler.lastMediaTime = video ? video.currentTime : 0;
+        sampler.lastWallMs = nowMs;
+    }
+    function flushTimeSavedBatch() {
+        const savedSecondsDelta = sampler.batchSaved;
+        const sampledWallSeconds = sampler.batchWallMs / 1000;
+        sampler.batchSaved = 0;
+        sampler.batchWallMs = 0;
+        // Empty and zero batches are never posted (playback at or below 1x saves nothing).
+        if (savedSecondsDelta <= 0 || sampledWallSeconds <= 0)
+            return;
+        window.postMessage({
+            type: 'TIME_SAVED_DELTA',
+            savedSecondsDelta,
+            sampledWallSeconds
+        }, '*');
+    }
+    function maybeFlushBatch() {
+        if (sampler.batchWallMs >= 10000)
+            flushTimeSavedBatch();
+    }
+    function sampleTimeSaved() {
+        const video = document.querySelector('video');
+        const nowMs = Date.now();
+        if (!video || video.paused || video.seeking || video !== sampler.videoRef) {
+            resetSamplerBaseline(video, nowMs); // no accrual across any reset condition
+            return;
+        }
+        const mediaDelta = video.currentTime - sampler.lastMediaTime;
+        const wallDelta = (nowMs - sampler.lastWallMs) / 1000;
+        resetSamplerBaseline(video, nowMs); // baseline always advances, checks or not
+        if (mediaDelta < 0 || wallDelta <= 0) {
+            console.warn(`[Echo360 Speed Control] Dropped time-saved sample: media delta ${mediaDelta.toFixed(2)}s over ${wallDelta.toFixed(2)}s wall (backward time or clock weirdness).`);
+            return;
+        }
+        if (mediaDelta > wallDelta * 4 * 1.25) {
+            // Impossible above the 4x cap even with slack. Long deltas from background
+            // throttling pass this check: media and wall time grow together there.
+            console.warn(`[Echo360 Speed Control] Dropped implausible media delta ${mediaDelta.toFixed(2)}s over ${wallDelta.toFixed(2)}s wall.`);
+            return;
+        }
+        const saved = Math.max(0, mediaDelta - wallDelta); // (s-1) x wall at constant speed s; 0 at or below 1x
+        sampler.batchSaved += saved;
+        sampler.batchWallMs += wallDelta * 1000;
+        maybeFlushBatch();
+    }
+    window.addEventListener('pagehide', () => {
+        flushTimeSavedBatch(); // best-effort; at most one batch window lost
+    });
     function applySlowSpeedFilter() {
         const items = document.querySelectorAll('#playback-speed-menu li[data-custom-speed]');
         items.forEach(item => {
@@ -349,6 +436,58 @@
             showSpeedOverlay(previousStudySpeed, `Returned to ${previousStudySpeed.toFixed(2)}x`);
         }
         // At 1x with nothing remembered: silent no-op by design (D6), deliberately unlogged.
+    }
+    // Shared format rule (ADR-8): floor-based, Nm from 60 s, Nh Nm from 3600 s.
+    // Below 60 s both surfaces are hidden; the function still answers 0m defensively.
+    function formatTimeSaved(totalSeconds) {
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        if (h >= 1)
+            return `${h}h ${m}m`;
+        return `${m}m`;
+    }
+    function buildTimeSavedStatRow() {
+        const row = document.createElement('div');
+        row.setAttribute('data-custom-stat', 'true');
+        row.style.cssText = `
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.55);
+    `;
+        const label = document.createElement('span');
+        label.textContent = 'Time saved: ';
+        const value = document.createElement('span');
+        value.setAttribute('data-custom-stat-value', 'true');
+        value.style.cssText = 'color: #46B864; font-weight: 600;';
+        row.appendChild(label);
+        row.appendChild(value);
+        return row;
+    }
+    function renderTimeSavedStatRow(row) {
+        const value = row.querySelector('[data-custom-stat-value="true"]');
+        if (value)
+            value.textContent = formatTimeSaved(timeSavedTotalSeconds);
+        // Hidden below the 60 s threshold; display none leaves no phantom grid gap.
+        // The hidden property mirrors the state for queries and assistive tech; the
+        // display toggle does the layout work since the row's inline flex would
+        // otherwise override the UA [hidden] rule.
+        row.hidden = timeSavedTotalSeconds < 60;
+        row.style.display = timeSavedTotalSeconds >= 60 ? 'flex' : 'none';
+    }
+    function updateTimeSavedStat() {
+        const cta = document.querySelector('[data-custom-cta="true"]');
+        if (!cta)
+            return; // footer not built yet; the builder renders from the retained total
+        let row = cta.querySelector('[data-custom-stat="true"]');
+        if (!row) {
+            // A footer built without the row (rebuilt by Echo360 mid-update): create it
+            // in place as the middle grid row, between the report and Ko-fi pills.
+            row = buildTimeSavedStatRow();
+            cta.insertBefore(row, cta.children[1] ?? null);
+        }
+        renderTimeSavedStatRow(row);
     }
     function addCustomSpeedOptions(retryCount = 0) {
         const menu = document.querySelector('#playback-speed-menu ul[role="menu"]');
@@ -615,6 +754,11 @@
             ctaLink.appendChild(ctaIcon);
         }
         ctaItem.appendChild(ctaLink);
+        // Time-saved stat: middle grid row, ALWAYS created with the footer and
+        // hidden below 60 s, so a first-session total can appear without a rebuild.
+        const statRow = buildTimeSavedStatRow();
+        renderTimeSavedStatRow(statRow);
+        ctaItem.appendChild(statRow);
         // Support pill: filled, white label. Hover darkens so contrast rises rather than falls.
         const KOFI_FILL = '#269644';
         const KOFI_FILL_HOVER = '#22853C';
@@ -826,6 +970,21 @@
         }
         else if (event.data.type === 'TOGGLE_STUDY_SPEED') {
             toggleStudySpeed();
+        }
+        else if (event.data.type === 'SET_TIME_SAVED_TOTAL') {
+            const total = event.data.totalSeconds;
+            if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) {
+                console.warn(`[Echo360 Speed Control] Ignored SET_TIME_SAVED_TOTAL with invalid totalSeconds: ${String(total)}.`);
+            }
+            else if (total < timeSavedTotalSeconds) {
+                // The total is monotonic (business rule 5); a lower value is a stale
+                // handshake read arriving after a fresher onChanged delivery.
+                console.warn(`[Echo360 Speed Control] Ignored stale SET_TIME_SAVED_TOTAL ${total}s; retaining newer ${timeSavedTotalSeconds}s.`);
+            }
+            else {
+                timeSavedTotalSeconds = total;
+                updateTimeSavedStat();
+            }
         }
     });
     injectEtaSpan();

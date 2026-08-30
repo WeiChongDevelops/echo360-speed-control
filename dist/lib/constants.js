@@ -9,13 +9,19 @@ export const MESSAGE_TYPES = {
     SET_SHORTCUTS: 'SET_SHORTCUTS_ENABLED',
     SET_PLAYBACK: 'SET_PLAYBACK_SPEED',
     GET_PLAYBACK: 'GET_PLAYBACK_SPEED',
-    CURRENT_PLAYBACK: 'CURRENT_SPEED'
+    CURRENT_PLAYBACK: 'CURRENT_SPEED',
+    TIME_SAVED_DELTA: 'TIME_SAVED_DELTA',
+    SET_TIME_SAVED_TOTAL: 'SET_TIME_SAVED_TOTAL',
+    TOGGLE_STUDY_SPEED: 'TOGGLE_STUDY_SPEED'
 };
 // Chrome runtime message actions
 export const ACTIONS = {
     SET_SPEED: 'setSpeed',
     GET_SPEED: 'getSpeed',
-    UPDATE_SHORTCUTS: 'updateShortcuts'
+    UPDATE_SHORTCUTS: 'updateShortcuts',
+    GET_SNAPSHOT: 'getSnapshot',
+    TOGGLE_STUDY_SPEED: 'toggleStudySpeed',
+    TIME_SAVED_DELTA: 'timeSavedDelta'
 };
 // Speed control configuration
 export const SPEED_CONFIG = {
