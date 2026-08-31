@@ -61,14 +61,16 @@
     if (seconds === null) return;
     if (kind !== 'finite') return;
     if (!Number.isFinite(seconds) || seconds <= 0) return;
-    const prefix = paused ? 'Paused, ' : '';
-    el.appendChild(document.createTextNode(`${prefix}${etaMainPart(seconds)} @ `));
+    el.appendChild(document.createTextNode(`${etaMainPart(seconds)} @ `));
     const strong = document.createElement('strong');
     strong.style.fontWeight = '700';
     strong.textContent = formatSpeed(speed);
     el.appendChild(strong);
-    if (!paused && speed > 1) {
+    if (speed > 2) {
       el.appendChild(document.createTextNode(' ⚡'));
+    }
+    if (paused) {
+      el.appendChild(document.createTextNode(' · paused'));
     }
   }
 
@@ -77,7 +79,7 @@
   const sliderValueEl = document.getElementById('sliderValue')!;
   const statusEl = document.getElementById('status')!;
   const retryButton = document.getElementById('statusRetry') as HTMLButtonElement;
-  const reportLink = document.getElementById('statusReport') as HTMLAnchorElement;
+  const reportLink = document.getElementById('statusReport') as HTMLAnchorElement | null;
   const presetButtons = document.querySelectorAll('.preset-btn');
   const themeToggle = document.getElementById('themeToggle')!;
   const shortcutsToggle = document.getElementById('shortcutsToggle') as HTMLInputElement;
@@ -254,8 +256,9 @@
   function formatTimeSaved(totalSeconds: number): string {
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
-    if (h >= 1) return `${h}h ${m}m`;
-    return `${m}m`;
+    if (h >= 1) return `${h}h ${m} min`;
+    if (m >= 1) return `${m} min`;
+    return `${Math.floor(totalSeconds)}s`;
   }
 
   // Last rendered total; the counter is monotonic (business rule 5), so a lower
@@ -363,7 +366,7 @@
     retryButton.classList.toggle('hidden', !errorStates.includes(currentStatusState));
     // One shared button; label reassigned on every render per state.
     retryButton.textContent = currentStatusState === 'transient_error' ? 'Retry now' : '↻ Retry';
-    reportLink.classList.toggle('hidden', currentStatusState !== 'persistent_error');
+    reportLink?.classList.toggle('hidden', currentStatusState !== 'persistent_error');
 
     // Gate eta visibility on FSM state (EARS-F2-4). Tick start/stop is controlled here;
     // start happens in the getSpeed response hook to avoid double-starting.

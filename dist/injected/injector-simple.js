@@ -21,14 +21,16 @@
             return;
         if (!Number.isFinite(seconds) || seconds <= 0)
             return;
-        const prefix = paused ? 'Paused, ' : '';
-        el.appendChild(document.createTextNode(`${prefix}${etaMainPart(seconds)} @ `));
+        el.appendChild(document.createTextNode(`${etaMainPart(seconds)} @ `));
         const strong = document.createElement('strong');
         strong.style.fontWeight = '700';
         strong.textContent = formatSpeed(speed);
         el.appendChild(strong);
-        if (!paused && speed > 1) {
+        if (speed > 2) {
             el.appendChild(document.createTextNode(' ⚡'));
+        }
+        if (paused) {
+            el.appendChild(document.createTextNode(' · paused'));
         }
     }
     let targetSpeed = 1.0;
@@ -443,8 +445,10 @@
         const h = Math.floor(totalSeconds / 3600);
         const m = Math.floor((totalSeconds % 3600) / 60);
         if (h >= 1)
-            return `${h}h ${m}m`;
-        return `${m}m`;
+            return `${h}h ${m} min`;
+        if (m >= 1)
+            return `${m} min`;
+        return `${Math.floor(totalSeconds)}s`;
     }
     function buildTimeSavedStatRow() {
         const row = document.createElement('div');
@@ -575,7 +579,7 @@
         hintItem.appendChild(hintLabel);
         hintItem.appendChild(makeRow('🐌', '<'));
         hintItem.appendChild(makeRow('⚡', '>'));
-        hintItem.appendChild(makeRow('🔁', 'R', 'Toggle 1x / previous speed'));
+        hintItem.appendChild(makeRow('🔁', 'R', 'Toggle: previous/1x'));
         menu.appendChild(hintItem);
         const allSpeeds = [4, 3.75, 3.5, 3.25, 3, 2.75, 2.5, 2.25, 2, 1.75, 1.5, 1.25, 1, 0.75, 0.5, 0.25];
         allSpeeds.forEach(speed => {
@@ -741,9 +745,6 @@
     `;
         ctaLink.addEventListener('mouseenter', () => { ctaLink.style.background = 'rgba(70, 184, 100, 0.22)'; });
         ctaLink.addEventListener('mouseleave', () => { ctaLink.style.background = 'rgba(70, 184, 100, 0.12)'; });
-        const ctaText = document.createElement('span');
-        ctaText.textContent = 'Request feature / report bug';
-        ctaLink.appendChild(ctaText);
         if (linkedinIconUrl) {
             const ctaIcon = document.createElement('img');
             ctaIcon.src = linkedinIconUrl;
@@ -753,6 +754,9 @@
             ctaIcon.style.display = 'block';
             ctaLink.appendChild(ctaIcon);
         }
+        const ctaText = document.createElement('span');
+        ctaText.textContent = 'Request feature / report bug';
+        ctaLink.appendChild(ctaText);
         ctaItem.appendChild(ctaLink);
         // Time-saved stat: middle grid row, ALWAYS created with the footer and
         // hidden below 60 s, so a first-session total can appear without a rebuild.
