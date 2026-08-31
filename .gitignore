@@ -1,3 +1,5 @@
 .planning/
 .start/
 CONSTITUTION.md
+.DS_Store
+node_modules/
